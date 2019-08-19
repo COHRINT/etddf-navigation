@@ -1,0 +1,8 @@
+# IMU configuration file
+
+noise: [[3,0,0],[0,3,0],[0,0,3]]
+error_models:
+  # first order Gauss-Markov for drift
+  fogm: 1
+  bias: 1
+rate: 100 # Hz
