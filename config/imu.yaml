@@ -1,8 +1,15 @@
 # IMU configuration file
 
-noise: [[3,0,0],[0,3,0],[0,0,3]]
-error_models:
-  # first order Gauss-Markov for drift
-  fogm: 1
-  bias: 1
 rate: 100 # Hz
+
+accel_scale_factor: 0.01
+accel_bias: 0.01 # m/s^3/sqrt(Hz)
+accel_bias_tc: 0.005
+accel_noise: [[0.001,0,0],[0,0.001,0],[0,0,0.001]]
+
+gyro_scale_factor: 0.01
+gyro_bias: 0.01 # m/s^3/sqrt(Hz)
+gyro_bias_tc: 0.01
+gyro_noise: [[0.001,0,0],[0,0.001,0],[0,0,0.001]]
+
+noise: [[1,0,0],[0,1,0],[0,0,1]]

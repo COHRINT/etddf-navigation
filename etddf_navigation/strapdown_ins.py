@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from __future__ import division
+
 """
 Implementation of an aided strapdown inertial navigation system.
 """
@@ -59,7 +61,9 @@ class Sensor(object):
 
         self.rate = cfg['rate'] # sensor update rate
         self.noise = np.array(cfg['noise']) # sensor white gaussian random noise covariance matrix
-        self.error_models = cfg['error_models'] # error models used in sensor, e.g. 1st order Gauss-Markov, etc.
+        # self.error_models = cfg['error_models'] # error models used in sensor, e.g. 1st order Gauss-Markov, etc.
+
+        self.cfg = cfg
 
     def load_config(self,filename):
         """
@@ -77,11 +81,37 @@ class IMU(Sensor):
     def __init__(self,cfg_path=None):
         super(IMU,self).__init__(cfg_path=cfg_path)
 
-        self.last_accel_state = np.empty((1,3))
-        self.last_gyro_state = np.empty((1,3))
+        self.accel_scale_factor = self.cfg['accel_scale_factor']
+        self.accel_bias = self.cfg['accel_bias']
+        self.accel_bias_tc = self.cfg['accel_bias_tc']
+        self.accel_noise = self.cfg['accel_noise']
+
+        self.gyro_scale_factor = self.cfg['gyro_scale_factor']
+        self.gyro_bias = self.cfg['gyro_bias']
+        self.gyro_bias_tc = self.cfg['gyro_bias_tc']
+        self.gyro_noise = self.cfg['gyro_noise']
+
+
+        self.last_accel_state = np.zeros((1,3))
+        self.last_gyro_state = np.zeros((1,3))
+        
+        self.last_accel_bias = np.zeros((1,3))
+        self.last_gyro_bias = np.zeros((1,3))
 
     def gen_measurement(self,ground_truth):
-        raise NotImplementedError
+        """
+        Generate simulated IMU measurements (accelerometer and gyroscope).
+        Uses random walk drift models for accel and gyro.
+        """
+        accel_gt = np.array([ground_truth[1],ground_truth[3],ground_truth[5]]) - self.last_accel_state
+        accel_bias = self.last_accel_bias + np.exp(-(1/self.rate)/self.accel_bias_tc)*np.random.multivariate_normal([0,0,0],np.eye(3)*self.accel_bias)
+        accel_noise = np.random.multivariate_normal([0,0,0],self.accel_noise)
+        accel_meas = accel_gt + accel_bias + accel_noise
+
+        self.last_accel_bias = accel_bias
+        self.last_accel_state = np.array([ground_truth[1],ground_truth[3],ground_truth[5]])
+
+        return accel_meas
 
 class GPS(Sensor):
 

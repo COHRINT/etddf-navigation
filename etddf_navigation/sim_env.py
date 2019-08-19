@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from __future__ import division
+
 import numpy as np
 from scipy.linalg import block_diag
 from scipy.integrate import solve_ivp
@@ -29,8 +31,6 @@ def run_sim(sim_time,dt,sensors,filter):
     tstart = sim_time[0]
     tfin = sim_time[1]
 
-    # define one agent modeled by dubin's unicycle
-
     # define initial estimate and covariance, and constant input (speed, and turning vel)
     # x0 = [0 0 0]';
     x0 = np.array( [ [0], [0], [0] ] ,ndmin=2)
@@ -40,20 +40,13 @@ def run_sim(sim_time,dt,sensors,filter):
     Q = np.diag([1,1,0.01])
     noise = block_diag(Q,[0,0])
     w = [[2]] # gaussian noise intensity
-    # [t1,y1] = ode45(@(t,y) dubin_uni(t,y,noise),[0:dt:tfin],[x0; u]);
-    # [t2,y2] = ode45(@(t,y) dubin_uni(t,y,0),[0:dt:tfin],[x0; u]);
-    # y1 = y1' 
-    # y2 = y2'
-    # print(x0)
-    # print(u)
-    # print(np.concatenate((x0,u)).transpose()[0])
+
+    # solve the initial value problem for each timestep
     soln1 = solve_ivp(dubin_uni,[0,tfin],np.concatenate((x0,u)).transpose()[0],t_eval=np.linspace(0,tfin,num=(tfin/dt)+1))
     soln1wnoise = solve_ivp(dubin_uni_noise,[0,tfin],np.concatenate((x0,u,w)).transpose()[0],t_eval=np.linspace(0,tfin,num=(tfin/dt)+1))
-    # soln1wnoise = soln1.y[0:3].transpose() + np.random.multivariate_normal([0,0,0],Q,int((tfin/dt)+1))
-    # print(soln1wnoise)
 
+    # generate measurements for each sensor for each timestep
     measurements = {}
-
     for i in range(0,soln1wnoise.y.shape[1]):
         gt = soln1wnoise.y[:,i].transpose()
         for s in sensors:
@@ -62,9 +55,9 @@ def run_sim(sim_time,dt,sensors,filter):
                     measurements[type(s).__name__] = np.empty((1,s.noise.shape[0]))
                 except IndexError:
                     measurements[type(s).__name__] = np.empty((1,1))
-            if np.mod(i,s.rate) == 0:
+            if np.mod(i,(1/(s.rate*dt))) == 0:
                 meas = s.gen_measurement([gt[0],0,gt[1],0,0,0,0,0,0,0,gt[2],gt[4]])
-                meas = np.expand_dims(meas,axis=0)
+                meas = np.atleast_2d(meas)
                 measurements[type(s).__name__] = np.concatenate((measurements[type(s).__name__],meas),axis=0)
 
     import matplotlib.pyplot as plt
@@ -83,6 +76,18 @@ def run_sim(sim_time,dt,sensors,filter):
     plt.plot(measurements['GPS'][:,0])
     plt.plot(measurements['GPS'][:,1])
     plt.plot(measurements['GPS'][:,2])
+
+    plt.figure(4)
+    plt.plot(measurements['IMU'][:,0])
+    plt.plot(measurements['IMU'][:,1])
+    plt.plot(measurements['IMU'][:,2])
+
+    # pos = 0.5*measurements['IMU'][0,:]**2
+    # imu_dt = 0.01
+
+    # for i in range(1,measurements['IMU'].shape[0]):
+
+
     
     plt.show()
 
@@ -119,11 +124,11 @@ def main():
     dt = 0.01
     
     # create sensor instances
-    # imu = IMU()
+    imu = IMU()
     gps = GPS()
     compass = Compass()
 
-    sensors = [gps,compass]
+    sensors = [imu,gps,compass]
 
     # # create nav filter instance
     # nf = NavFilter(sensors = [imu,gps,compass])
