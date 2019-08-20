@@ -10,6 +10,8 @@ import os
 import yaml
 import numpy as np
 
+G_ACCEL = 9.806
+
 class StrapdownINS:
 
     def __init__(self):
@@ -102,8 +104,18 @@ class IMU(Sensor):
         """
         Generate simulated IMU measurements (accelerometer and gyroscope).
         Uses random walk drift models for accel and gyro.
+
+        Parameters
+        ----------
+        ground_truth
+            true 12 DOF state of vehicle
+
+        Returns
+        -------
+        measurement
+            computed measurement for sensor
         """
-        accel_gt = np.array([ground_truth[1],ground_truth[3],ground_truth[5]]) - self.last_accel_state
+        accel_gt = np.array([ground_truth[1],ground_truth[3],ground_truth[5] - G_ACCEL]) - self.last_accel_state
         accel_bias = self.last_accel_bias + np.exp(-(1/self.rate)/self.accel_bias_tc)*np.random.multivariate_normal([0,0,0],np.eye(3)*self.accel_bias)
         accel_noise = np.random.multivariate_normal([0,0,0],self.accel_noise)
         accel_meas = accel_gt + accel_bias + accel_noise
@@ -126,7 +138,12 @@ class GPS(Sensor):
         Parameters
         ----------
         ground_truth
-            true state of vehicle (NED pos, vel, euler attitude & rates)
+            true 12 DOF state of vehicle
+
+        Returns
+        -------
+        measurement
+            computed measurement for sensor
         """
         true_pos = np.array([ground_truth[0],ground_truth[2],ground_truth[4]])
         noise = np.random.multivariate_normal([0,0,0],self.noise)
@@ -146,7 +163,12 @@ class Compass(Sensor):
         Parameters
         ----------
         ground_truth
-            true state of vehicle (NED pos, vel, euler attitude & rates)
+            true 12 DOF state of vehicle
+
+        Returns
+        -------
+        measurement
+            computed measurement for sensor
         """
         true_heading = np.array([ground_truth[10]])
         noise = np.random.normal(0,self.noise)
