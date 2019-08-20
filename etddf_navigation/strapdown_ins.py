@@ -10,17 +10,51 @@ import os
 import yaml
 import numpy as np
 
-G_ACCEL = 9.806
+G_ACCEL = 9.80665 # gravitational acceleration [m/s/s]
 
 class StrapdownINS:
+    """
+    Implementation of an aided strapdown intertial navigation filter.  
+    State: [x_pos, y_pos, z_pos, x_vel, y_vel, z_vel, 
+            q_0, q_1, q_2, q_3, b_ax, b_ay, b_az, b_wx, b_wy, b_wz]
+    """
 
-    def __init__(self):
+    def __init__(self, sensors, init_est=None, init_cov=None):
+        """
+        f
+        """
         pass
 
-    def propagate(self):
-        pass
+    def propagate(self,imu_measurement):
+        """
+        Propagate state and covariance forward in time by dt using process model
+        and IMU measurement.
+
+        Parameters
+        ----------
+        imu_measurement
+            Accelerometer and gyroscope measurements. numpy array of form:
+            [a_x, a_y, a_z, w_x, w_y, w_z]
+        """
+        # extract relevant estimate states, and measurement elements for clarity
+        b_wx = self.estimate[13]; b_wy = self.estimate[14]; b_wz = self.estimate[15]
+        a_x = imu_measurement[0]; a_y = imu_measurement[1]; a_z = imu_measurement[2]
+        w_x = imu_measurement[3]; w_y = imu_measurement[4]; w_z = imu_measurement[5]
+        
+        quaterion_stm = np.array([[0, -(w_x-b_wx), -(w_y-b_wy), -(w_z-b_wz)],
+                                    [w_x-b_wx, 0, w_z-b_wz, -(w_y-b_wy)],
+                                    [w_y-b_wx, -(w_z-b_wz), 0, w_x-b_wx],
+                                    [w_z-b_wz, w_y-b_wy, -(w_x-b_wx), 0]])
 
     def update(self):
+        """
+        Correct estimate using available aiding measurements.
+
+        Parameters
+        ----------
+        measurements
+            available measurements at current timestep
+        """
         pass
 
     def compute_gravity_vector(self,estimate):
@@ -123,7 +157,15 @@ class IMU(Sensor):
         self.last_accel_bias = accel_bias
         self.last_accel_state = np.array([ground_truth[1],ground_truth[3],ground_truth[5]])
 
-        return accel_meas
+        gyro_gt = np.array([0,0,ground_truth[10]]) - self.last_gyro_state
+        gyro_bias = self.last_gyro_bias + np.exp(-(1/self.rate)/self.gyro_bias_tc)*np.random.multivariate_normal([0,0,0],np.eye(3)*self.gyro_bias)
+        gyro_noise = np.random.multivariate_normal([0,0,0],self.gyro_noise)
+        gyro_meas = gyro_gt + gyro_bias + gyro_noise
+
+        self.last_gyro_bias = gyro_bias
+        self.last_gyro_state = np.array([0,0,ground_truth[10]])
+
+        return accel_meas, gyro_meas
 
 class GPS(Sensor):
 
@@ -173,6 +215,7 @@ class Compass(Sensor):
         true_heading = np.array([ground_truth[10]])
         noise = np.random.normal(0,self.noise)
         measurement = true_heading + noise
+        measurement = np.mod(measurement,2*np.pi)
         return measurement
 
 def main():

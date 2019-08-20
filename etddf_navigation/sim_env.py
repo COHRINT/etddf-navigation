@@ -51,15 +51,27 @@ def run_sim(sim_time,dt,sensors,filter):
     for i in range(0,soln1wnoise.y.shape[1]):
         gt = soln1wnoise.y[:,i].transpose()
         for s in sensors:
-            if type(s).__name__ not in measurements:
+            if type(s).__name__ not in measurements and type(s).__name__ != 'IMU':
                 try:
                     measurements[type(s).__name__] = np.empty((1,s.noise.shape[0]))
                 except IndexError:
                     measurements[type(s).__name__] = np.empty((1,1))
+            elif type(s).__name__ not in measurements and type(s).__name__ == 'IMU':
+                if type(s).__name__+'_ACCEL' not in measurements:
+                    measurements[type(s).__name__ + '_ACCEL'] = np.empty((1,s.noise.shape[0]))
+                if type(s).__name__ + '_GYRO' not in measurements:
+                    measurements[type(s).__name__ + '_GYRO'] = np.empty((1,s.noise.shape[0]))
             if np.mod(i,(1/(s.rate*dt))) == 0:
-                meas = s.gen_measurement([gt[0],0,gt[1],0,10,0,0,0,0,0,gt[2],gt[4]])
-                meas = np.atleast_2d(meas)
-                measurements[type(s).__name__] = np.concatenate((measurements[type(s).__name__],meas),axis=0)
+                if type(s).__name__ == 'IMU':
+                    meas_a, meas_g = s.gen_measurement([gt[0],0,gt[1],0,10,0,0,0,0,0,gt[2],gt[4]])
+                    meas_a = np.atleast_2d(meas_a)
+                    meas_g = np.atleast_2d(meas_g)
+                    measurements[type(s).__name__ + '_ACCEL'] = np.concatenate((measurements[type(s).__name__ + '_ACCEL'],meas_a),axis=0)
+                    measurements[type(s).__name__ + '_GYRO'] = np.concatenate((measurements[type(s).__name__ + '_GYRO'],meas_g),axis=0)
+                else:
+                    meas = s.gen_measurement([gt[0],0,gt[1],0,10,0,0,0,0,0,gt[2],gt[4]])
+                    meas = np.atleast_2d(meas)
+                    measurements[type(s).__name__] = np.concatenate((measurements[type(s).__name__],meas),axis=0)
 
     return soln1wnoise, measurements
 
@@ -69,15 +81,16 @@ def measurement_plotting(gt_results, measurements):
     """
     # compute integrated imu position and velocity
     imu_dt = 0.01
-    pos = 0.5*measurements['IMU'][0,:]*imu_dt**2
-    vel = measurements['IMU'][0,:]*imu_dt
+    pos = 0.5*measurements['IMU_ACCEL'][0,:]*imu_dt**2 #+ np.array((3,0,0))*imu_dt
+    vel = measurements['IMU_ACCEL'][0,:]*imu_dt #+ np.array((3,0,0))
 
     imu_int_vel = np.array([vel])
     imu_int_pos = np.array([pos])
 
-    for i in range(1,measurements['IMU'].shape[0]):
-        imu_int_vel = np.concatenate((imu_int_vel,np.atleast_2d(imu_int_vel[i-1,:] + measurements['IMU'][i,:]*imu_dt)),axis=0)
-        imu_int_pos = np.concatenate((imu_int_pos,np.atleast_2d(imu_int_pos[i-1,:] + measurements['IMU'][i,:]*imu_dt + 0.5*measurements['IMU'][i,:]*(imu_dt**2))),axis=0)
+    for i in range(1,measurements['IMU_ACCEL'].shape[0]):
+        imu_int_vel = np.concatenate((imu_int_vel,np.atleast_2d(imu_int_vel[i-1,:] + measurements['IMU_ACCEL'][i,:]*imu_dt)),axis=0)
+        # imu_int_pos = np.concatenate((imu_int_pos,np.atleast_2d(imu_int_pos[i-1,:] + measurements['IMU'][i,:]*imu_dt + 0.5*measurements['IMU'][i,:]*(imu_dt**2))),axis=0)
+        imu_int_pos = np.concatenate((imu_int_pos,np.atleast_2d(imu_int_pos[i-1,:] + imu_int_vel[i-1,:]*imu_dt)),axis=0)
 
     plt.figure(1)
     plt.grid(True)
@@ -109,12 +122,22 @@ def measurement_plotting(gt_results, measurements):
 
     plt.figure(4)
     plt.grid(True)
-    plt.plot(measurements['IMU'][:,0])
-    plt.plot(measurements['IMU'][:,1])
-    plt.plot(measurements['IMU'][:,2])
+    plt.plot(measurements['IMU_ACCEL'][:,0])
+    plt.plot(measurements['IMU_ACCEL'][:,1])
+    plt.plot(measurements['IMU_ACCEL'][:,2])
     plt.title('IMU Acceleration Measurements')
     plt.xlabel('Timestep')
     plt.ylabel('Measurement [m/s/s]')
+    plt.legend(['x','y','z'])
+
+    plt.figure(5)
+    plt.grid(True)
+    plt.plot(measurements['IMU_GYRO'][:,0])
+    plt.plot(measurements['IMU_GYRO'][:,1])
+    plt.plot(measurements['IMU_GYRO'][:,2])
+    plt.title('IMU Angular Rate Measurements')
+    plt.xlabel('Timestep')
+    plt.ylabel('Measurement [rad/s]')
     plt.legend(['x','y','z'])
 
     plt.show()
