@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 from strapdown_ins import StrapdownINS, GPS, IMU, Compass
 
-def run_sim(sim_time,dt,sensors,filter):
+def run_sim(sim_time,dt,sensors,filter_):
     """
     Run a simulated trajectory with the specified filter.
     """
@@ -48,6 +48,7 @@ def run_sim(sim_time,dt,sensors,filter):
 
     # generate measurements for each sensor for each timestep
     measurements = {}
+    estimate = np.empty((1,16))
     for i in range(0,soln1wnoise.y.shape[1]):
         gt = soln1wnoise.y[:,i].transpose()
         for s in sensors:
@@ -68,14 +69,25 @@ def run_sim(sim_time,dt,sensors,filter):
                     meas_g = np.atleast_2d(meas_g)
                     measurements[type(s).__name__ + '_ACCEL'] = np.concatenate((measurements[type(s).__name__ + '_ACCEL'],meas_a),axis=0)
                     measurements[type(s).__name__ + '_GYRO'] = np.concatenate((measurements[type(s).__name__ + '_GYRO'],meas_g),axis=0)
+
+                    # filter IMU measurements
+                    imu_meas = np.squeeze(np.concatenate((meas_a,meas_g),axis=1),axis=0)
+                    filter_.propagate(imu_meas)
                 else:
                     meas = s.gen_measurement([gt[0],0,gt[1],0,10,0,0,0,0,0,gt[2],gt[4]])
                     meas = np.atleast_2d(meas)
                     measurements[type(s).__name__] = np.concatenate((measurements[type(s).__name__],meas),axis=0)
 
-    return soln1wnoise, measurements
+                    if type(s).__name__ == 'GPS':
+                        filter_.update(meas,type(s).__name__)
 
-def measurement_plotting(gt_results, measurements):
+        est = filter_.get_estimate()
+        est = np.atleast_2d(est)
+        estimate = np.concatenate((estimate,est),axis=0)
+
+    return soln1wnoise, measurements, estimate
+
+def measurement_plotting(gt_results, measurements, filter_results):
     """
     Plots collected measurements from all sensors.
     """
@@ -98,6 +110,7 @@ def measurement_plotting(gt_results, measurements):
     # plt.plot(soln1wnoise[0:,0],soln1wnoise[0:,1])
     plt.plot(gt_results.y[0], gt_results.y[1])
     plt.plot(imu_int_pos[:,0],imu_int_pos[:,1])
+    plt.plot(filter_results[1:,0],filter_results[1:,1])
     # plt.plot(x_est_x,x_est_y)
     plt.title('Ground Truth 2D Position')
     plt.xlabel('X Position [m]')
@@ -140,6 +153,16 @@ def measurement_plotting(gt_results, measurements):
     plt.ylabel('Measurement [rad/s]')
     plt.legend(['x','y','z'])
 
+    plt.figure(6)
+    plt.grid(True)
+    plt.plot(filter_results[0:-1,0]-gt_results.y[0])
+    plt.plot(filter_results[0:-1,1]-gt_results.y[1])
+    plt.plot(filter_results[0:-1,2]-10)
+    plt.title('Filter Position Estimate Errors')
+    plt.xlabel('Timestep')
+    plt.ylabel('Estimate')
+    plt.legend(['x','y','z'])
+
     plt.show()
 
 def dubin_uni(t,y):
@@ -169,7 +192,7 @@ def soln_plotting(truth,est_results):
 def main():
 
     # sim params
-    sim_time = [0,100]
+    sim_time = [0,20]
     dt = 0.01
     
     # create sensor instances
@@ -180,14 +203,14 @@ def main():
     sensors = [imu,gps,compass]
 
     # # create nav filter instance
-    # nf = NavFilter(sensors = [imu,gps,compass])
+    nav_filter = StrapdownINS(sensors={'IMU':imu,'GPS':gps,'Compass':compass}, dt=dt)
 
     # run simulation
-    gt_results, measurements = run_sim(sim_time,dt,sensors,filter=None)
+    gt_results, measurements, filter_results = run_sim(sim_time,dt,sensors,filter_=nav_filter)
 
     # plot results
     # nav_filter_plotting(results)
-    measurement_plotting(gt_results,measurements)
+    measurement_plotting(gt_results,measurements,filter_results)
 
 
 if __name__ == "__main__":
