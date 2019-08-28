@@ -287,6 +287,11 @@ class StrapdownINS:
         cosy_cosp = 1-2*(q2**2 + q3**2)
         yaw = np.arctan2(siny_cosp,cosy_cosp)
 
+        if deg:
+            roll *= 180/np.pi
+            pitch *= 180/np.pi
+            yaw *= 180/np.pi
+
         return np.array([roll,pitch,yaw],ndmin=1)
 
 class Sensor(object):
