@@ -46,7 +46,7 @@ class StrapdownINS:
                                 initial_accel_bias,
                                 initial_gyro_bias])
 
-        init_pos_cov = 100*np.eye(3)
+        init_pos_cov = 1000*np.eye(3)
         init_vel_cov = 10*np.eye(3)
         init_att_cov = 1*np.eye(4)
         init_ab_cov = 1*np.eye(3)
@@ -249,6 +249,45 @@ class StrapdownINS:
         q3 = sy*cp*cr - cy*sp*sr
 
         return np.array([q0,q1,q2,q3],ndmin=1)
+
+    def quat2euler(self,quat,deg=False):
+        """
+        Convert quaternion representation to euler angles.
+        From https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+
+        Parameters
+        ----------
+        quat
+            quaternion representation: follows [q0, q1, q2, q3]
+        deg (optional)
+            units of output euler angles -- defaults to False for radians
+
+        Returns
+        -------
+        angles
+            vector of euler angles: follows [roll, pitch, yaw] convention
+        """
+        # extract quaternion components
+        [q0,q1,q2,q3] = quat
+
+        # roll
+        sinr_cosp = 2*(q0*q1 + q2*q3)
+        cosr_cosp = 1-2*(q1**2 + q2**2)
+        roll = np.arctan2(sinr_cosp,cosr_cosp)
+
+        # pitch
+        sinp = 2*(q0*q2 - q3*q1)
+        if abs(sinp) >= 1:
+            pitch = np.copysign(np.pi/2,sinp)
+        else:
+            pitch = np.arcsin(sinp)
+
+        # yaw
+        siny_cosp = 2*(q0*q3 + q1*q2)
+        cosy_cosp = 1-2*(q2**2 + q3**2)
+        yaw = np.arctan2(siny_cosp,cosy_cosp)
+
+        return np.array([roll,pitch,yaw],ndmin=1)
 
 class Sensor(object):
 
