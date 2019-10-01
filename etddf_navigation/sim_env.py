@@ -6,8 +6,12 @@ import numpy as np
 from scipy.linalg import block_diag
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
-from strapdown_ins import StrapdownINS, GPS, IMU, Compass
+from strapdown_ins import StrapdownINS, GPS, IMU, Compass, Depth
+from helpers.angle_conversions import euler2quat, quat2euler
+
+# import pudb; pudb.set_trace()
 
 def run_sim(sim_time,dt,sensors,filter_):
     """
@@ -36,7 +40,7 @@ def run_sim(sim_time,dt,sensors,filter_):
     # x0 = [0 0 0]';
     x0 = np.array( [ [0], [0], [0] ] ,ndmin=2)
     P0 = np.diag([1,1,0.001])
-    u = np.array( [ [3], [0.2] ], ndmin=2)
+    u = np.array( [ [2], [0.05] ], ndmin=2)
 
     Q = np.diag([1,1,0.01])
     noise = block_diag(Q,[0,0])
@@ -49,6 +53,11 @@ def run_sim(sim_time,dt,sensors,filter_):
     # generate measurements for each sensor for each timestep
     measurements = {}
     estimate = np.empty((1,16))
+    covariance = np.empty((1,16))
+    accel_bias_gt = np.empty((1,3))
+    gyro_bias_gt = np.empty((1,3))
+    accel_gt = np.empty((1,3))
+    gyro_gt = np.empty((1,3))
     for i in range(0,soln1wnoise.y.shape[1]):
         gt = soln1wnoise.y[:,i].transpose()
         for s in sensors:
@@ -64,30 +73,194 @@ def run_sim(sim_time,dt,sensors,filter_):
                     measurements[type(s).__name__ + '_GYRO'] = np.empty((1,s.noise.shape[0]))
             if np.mod(i,(1/(s.rate*dt))) == 0:
                 if type(s).__name__ == 'IMU':
-                    meas_a, meas_g = s.gen_measurement([gt[0],0,gt[1],0,10,0,0,0,0,0,gt[2],gt[4]])
+                    meas_a, meas_g, gt_a, gt_g, bias_a, bias_g = s.gen_measurement([gt[0],gt[3]*np.cos(gt[2]),gt[1],gt[3]*np.sin(gt[2]),10,0,0,0,0,0,gt[2],gt[4]])
                     meas_a = np.atleast_2d(meas_a)
                     meas_g = np.atleast_2d(meas_g)
                     measurements[type(s).__name__ + '_ACCEL'] = np.concatenate((measurements[type(s).__name__ + '_ACCEL'],meas_a),axis=0)
                     measurements[type(s).__name__ + '_GYRO'] = np.concatenate((measurements[type(s).__name__ + '_GYRO'],meas_g),axis=0)
 
+                    bias_a = np.atleast_2d(bias_a)
+                    bias_g = np.atleast_2d(bias_g)
+                    accel_bias_gt = np.concatenate((accel_bias_gt,bias_a),axis=0)
+                    gyro_bias_gt = np.concatenate((gyro_bias_gt,bias_g),axis=0)
+
+                    gt_a = np.atleast_2d(gt_a)
+                    gt_g = np.atleast_2d(gt_g)
+                    accel_gt = np.concatenate((accel_gt,gt_a),axis=0)
+                    gyro_gt = np.concatenate((gyro_gt,gt_g),axis=0)
+
                     # filter IMU measurements
                     imu_meas = np.squeeze(np.concatenate((meas_a,meas_g),axis=1),axis=0)
                     filter_.propagate(imu_meas)
                 else:
-                    meas = s.gen_measurement([gt[0],0,gt[1],0,10,0,0,0,0,0,gt[2],gt[4]])
+                    meas = s.gen_measurement([gt[0],gt[3]*np.cos(gt[2]),gt[1],gt[3]*np.sin(gt[2]),10,0,0,0,0,0,gt[2],gt[4]])
                     meas = np.atleast_2d(meas)
                     measurements[type(s).__name__] = np.concatenate((measurements[type(s).__name__],meas),axis=0)
 
                     if type(s).__name__ == 'GPS':
                         filter_.update(meas,type(s).__name__)
 
-        est = filter_.get_estimate()
+
+        est,cov = filter_.get_estimate(cov=True)
         est = np.atleast_2d(est)
+        diag_cov = np.diag(cov)
+        diag_cov = np.atleast_2d(diag_cov)
         estimate = np.concatenate((estimate,est),axis=0)
+        covariance = np.concatenate((covariance,diag_cov),axis=0)
 
-    return soln1wnoise, measurements, estimate
+    return soln1wnoise, measurements, estimate, covariance, accel_bias_gt, gyro_bias_gt, accel_gt, gyro_gt
 
-def measurement_plotting(gt_results, measurements, filter_results):
+def run_sim_from_file(sim_time,dt,sensors,sensor_data,ground_truth,filter_):
+    """
+    Run simulated trajectory from collected data with specified filter.
+    """
+    generated_measurements = {}
+    estimate = np.empty((1,16))
+    covariance = np.empty((1,16))
+    accel_bias_gt = np.empty((1,3))
+    gyro_bias_gt = np.empty((1,3))
+    accel_gt = np.empty((1,3))
+    gyro_gt = np.empty((1,3))
+    for i in range(0,sensor_data['imu'].shape[0]):
+        # propagate filter with imu measurements
+        imu_meas = sensor_data['imu'][i,:]
+        # ad-hoc NED to ENU (or is it ENU TO NED?) conversion
+        imu_meas[1] *= -1
+        imu_meas[2] *= -1
+        imu_meas[4] *= -1
+        imu_meas[5] *= -1
+        filter_.propagate(imu_meas)
+
+        # add other sensors at specfied rates
+        for s in sensors:
+            if type(s).__name__ not in generated_measurements and type(s).__name__ != 'IMU':
+                try:
+                    generated_measurements[type(s).__name__] = np.empty((1,s.noise.shape[0]))
+                except IndexError:
+                    generated_measurements[type(s).__name__] = np.empty((1,1))
+
+            if np.mod(i,(1/(s.rate*dt))) == 0:
+                [roll,pitch,yaw] = quat2euler([ground_truth[i,3],ground_truth[i,4],ground_truth[i,5],ground_truth[i,6]])
+                meas = s.gen_measurement([ground_truth[i,0],
+                                            ground_truth[i,1],
+                                            ground_truth[i,2],
+                                            ground_truth[i,7],
+                                            ground_truth[i,8],
+                                            ground_truth[i,9],
+                                            roll,
+                                            pitch,
+                                            yaw,
+                                            ground_truth[i,10],
+                                            ground_truth[i,11],
+                                            ground_truth[i,12]])
+                meas = np.atleast_2d(meas)
+                generated_measurements[type(s).__name__] = np.concatenate((generated_measurements[type(s).__name__],meas),axis=0)
+
+                # if type(s).__name__ == 'GPS':
+                    # meas[0,2] = -1*meas[0,2]
+                    # filter_.update(meas,type(s).__name__)
+                # if type(s).__name__ == 'Depth':
+                    # filter_.update(meas,type(s).__name__)
+        
+        # record current estimate
+        est,cov = filter_.get_estimate(cov=True)
+        est = np.atleast_2d(est)
+        diag_cov = np.diag(cov)
+        diag_cov = np.atleast_2d(diag_cov)
+        estimate = np.concatenate((estimate,est),axis=0)
+        covariance = np.concatenate((covariance,diag_cov),axis=0)
+
+    return generated_measurements,estimate,covariance
+
+def plotting_from_file(sensor_data,generated_measurements,gt_data,est,cov):
+    """
+    Plots measurements, ground truth, and filter estimates.
+    """
+
+    # imu_time = np.arange(sim_time[0],sim_time[1]+imu_dt,imu_dt)
+    # gps_time = np.arange(sim_time[0],sim_time[1],0.1)
+
+    fig1 = plt.figure(1)
+    plt.grid(True)
+    ax = fig1.add_subplot(111, projection='3d')
+    # ax = Axes3D(fig1)
+    # plt.plot(gt_data[:,0], gt_data[:,1])
+    ax.plot(gt_data[:,0],gt_data[:,1],gt_data[:,2])
+    # plt.plot(est[:,0],est[:,1])
+    ax.plot(est[:,0],est[:,1],est[:,2])
+    plt.title('Ground Truth 3D Position')
+    plt.xlabel('X Position [m]')
+    plt.ylabel('Y Position [m]')
+    ax.set_zlabel('Z Position [m]')
+    plt.legend(['ground truth','imu estimate'])
+
+    plt.figure(2)
+    plt.grid(True)
+    plt.plot(generated_measurements['Compass'])
+    plt.title('Compass-measured heading')
+    plt.xlabel('Timestep')
+    plt.ylabel('Heading [rad]')
+
+    plt.figure(3)
+    plt.grid(True)
+    plt.plot(generated_measurements['GPS'][:,0])
+    plt.plot(generated_measurements['GPS'][:,1])
+    plt.plot(generated_measurements['GPS'][:,2])
+    plt.title('GPS Position Measurements')
+    plt.xlabel('Timestep')
+    plt.ylabel('Measurement [m]')
+    plt.legend(['x','y','z'])
+
+    plt.figure(4)
+    plt.grid(True)
+    plt.plot(generated_measurements['Depth'])
+    plt.title('Measured Depth')
+    plt.xlabel('Timestep')
+    plt.ylabel('Depth [m]')
+
+    # convert estimated quaternion to euler angles
+    filter_roll = np.empty((est[:,6].shape))
+    filter_pitch = np.empty((est[:,6].shape))
+    filter_yaw = np.empty((est[:,6].shape))
+    gt_roll = np.empty((gt_data[:,3].shape))
+    gt_pitch = np.empty((gt_data[:,3].shape))
+    gt_yaw = np.empty((gt_data[:,3].shape))
+    for i in range(0,est[:,6].shape[0]):
+        [filter_roll[i], filter_pitch[i], filter_yaw[i]] = quat2euler(est[i,6:10],deg=True)
+    for i in range(0,gt_data[:,3].shape[0]):
+        [gt_roll[i], gt_pitch[i], gt_yaw[i]] = quat2euler(gt_data[i,3:7],deg=True)
+
+    plt.figure(8)
+    plt.grid(True)
+    plt.plot(filter_roll[:])
+    plt.plot(filter_pitch[:])
+    plt.plot(filter_yaw[:])
+    plt.plot(gt_roll[:],'--')
+    plt.plot(gt_pitch[:],'--')
+    plt.plot(gt_yaw[:],'--')
+    plt.title('Filter Attitude Estimate')
+    plt.xlabel('Time [s]')
+    plt.ylabel('Estimate [deg]')
+    plt.legend(['roll','pitch','yaw'])
+
+    plt.figure(9)
+    plt.grid(True)
+    plt.plot(est[:,6])
+    plt.plot(est[:,7])
+    plt.plot(est[:,8])
+    plt.plot(est[:,9])
+    plt.plot(gt_data[:,3],'--')
+    plt.plot(gt_data[:,4],'--')
+    plt.plot(gt_data[:,5],'--')
+    plt.plot(gt_data[:,6],'--')
+    plt.title('Filter Attitude Estimates and Ground Truth (quaternions)')
+    plt.xlabel('Time [s]')
+    plt.ylabel('Value')
+    plt.legend(['est q0','est q1','est q2','est q3','gt q0','gt q1','gt q2','gt q3'])
+
+    plt.show()
+
+def measurement_plotting(dt, sim_time, gt_results, measurements, filter_results, filter_cov, accel_bias_gt, gyro_bias_gt, accel_gt, gyro_gt):
     """
     Plots collected measurements from all sensors.
     """
@@ -103,6 +276,16 @@ def measurement_plotting(gt_results, measurements, filter_results):
         imu_int_vel = np.concatenate((imu_int_vel,np.atleast_2d(imu_int_vel[i-1,:] + measurements['IMU_ACCEL'][i,:]*imu_dt)),axis=0)
         # imu_int_pos = np.concatenate((imu_int_pos,np.atleast_2d(imu_int_pos[i-1,:] + measurements['IMU'][i,:]*imu_dt + 0.5*measurements['IMU'][i,:]*(imu_dt**2))),axis=0)
         imu_int_pos = np.concatenate((imu_int_pos,np.atleast_2d(imu_int_pos[i-1,:] + imu_int_vel[i-1,:]*imu_dt)),axis=0)
+
+    imu_time = np.arange(sim_time[0],sim_time[1]+imu_dt,imu_dt)
+    gps_time = np.arange(sim_time[0],sim_time[1],0.1)
+
+    # convert estimated quaternion to euler angles
+    filter_roll = np.empty((filter_results[:,6].shape))
+    filter_pitch = np.empty((filter_results[:,6].shape))
+    filter_yaw = np.empty((filter_results[:,6].shape))
+    for i in range(0,filter_results[:,6].shape[0]):
+        [filter_roll[i], filter_pitch[i], filter_yaw[i]] = quat2euler(filter_results[i,6:10],deg=True)
 
     plt.figure(1)
     plt.grid(True)
@@ -138,6 +321,9 @@ def measurement_plotting(gt_results, measurements, filter_results):
     plt.plot(measurements['IMU_ACCEL'][:,0])
     plt.plot(measurements['IMU_ACCEL'][:,1])
     plt.plot(measurements['IMU_ACCEL'][:,2])
+    plt.plot(accel_gt[:,0])
+    plt.plot(accel_gt[:,1])
+    plt.plot(accel_gt[:,2])
     plt.title('IMU Acceleration Measurements')
     plt.xlabel('Timestep')
     plt.ylabel('Measurement [m/s/s]')
@@ -148,6 +334,9 @@ def measurement_plotting(gt_results, measurements, filter_results):
     plt.plot(measurements['IMU_GYRO'][:,0])
     plt.plot(measurements['IMU_GYRO'][:,1])
     plt.plot(measurements['IMU_GYRO'][:,2])
+    plt.plot(gyro_gt[:,0])
+    plt.plot(gyro_gt[:,1])
+    plt.plot(gyro_gt[:,2])
     plt.title('IMU Angular Rate Measurements')
     plt.xlabel('Timestep')
     plt.ylabel('Measurement [rad/s]')
@@ -155,13 +344,66 @@ def measurement_plotting(gt_results, measurements, filter_results):
 
     plt.figure(6)
     plt.grid(True)
-    plt.plot(filter_results[0:-1,0]-gt_results.y[0])
-    plt.plot(filter_results[0:-1,1]-gt_results.y[1])
-    plt.plot(filter_results[0:-1,2]-10)
+    plt.plot(imu_time,filter_results[0:-1,0]-gt_results.y[0])
+    plt.fill_between(imu_time,2*np.sqrt(filter_cov[0:-1,0]),-2*np.sqrt(filter_cov[0:-1,0]),alpha=0.25)
+    plt.plot(imu_time,filter_results[0:-1,1]-gt_results.y[1])
+    plt.fill_between(imu_time,2*np.sqrt(filter_cov[0:-1,1]),-2*np.sqrt(filter_cov[0:-1,1]),alpha=0.25)
+    plt.plot(imu_time,filter_results[0:-1,2]-10)
+    plt.fill_between(imu_time,2*np.sqrt(filter_cov[0:-1,2]),-2*np.sqrt(filter_cov[0:-1,2]),alpha=0.25)
     plt.title('Filter Position Estimate Errors')
     plt.xlabel('Timestep')
     plt.ylabel('Estimate')
     plt.legend(['x','y','z'])
+
+    plt.figure(7)
+    plt.grid(True)
+    plt.plot(imu_time,filter_results[0:-1,3]-(gt_results.y[3]*np.cos(gt_results.y[2])))
+    plt.fill_between(imu_time,2*np.sqrt(filter_cov[0:-1,3]),-2*np.sqrt(filter_cov[0:-1,3]),alpha=0.25)
+    plt.plot(imu_time,filter_results[0:-1,4]-(gt_results.y[3]*np.sin(gt_results.y[2])))
+    plt.fill_between(imu_time,2*np.sqrt(filter_cov[0:-1,4]),-2*np.sqrt(filter_cov[0:-1,4]),alpha=0.25)
+    plt.plot(imu_time,filter_results[0:-1,5]-0)
+    plt.fill_between(imu_time,2*np.sqrt(filter_cov[0:-1,5]),-2*np.sqrt(filter_cov[0:-1,5]),alpha=0.25)
+    plt.title('Filter Velocity Estimate Errors')
+    plt.xlabel('Timestep')
+    plt.ylabel('Estimate')
+    plt.legend(['x','y','z'])
+
+    plt.figure(8)
+    plt.grid(True)
+    plt.plot(imu_time,filter_roll[:-1])
+    plt.plot(imu_time,filter_pitch[:-1])
+    plt.plot(imu_time,filter_yaw[:-1])
+    plt.plot(imu_time,180*gt_results.y[2]/np.pi)
+    plt.title('Filter Attitude Estimate')
+    plt.xlabel('Time [s]')
+    plt.ylabel('Estimate [deg]')
+    plt.legend(['roll','pitch','yaw'])
+
+    plt.figure(9)
+    plt.grid(True)
+    plt.plot(imu_time,filter_results[:-1,10]-accel_bias_gt[:-1,0])
+    plt.fill_between(imu_time,2*np.sqrt(filter_cov[0:-1,10]),-2*np.sqrt(filter_cov[0:-1,10]),alpha=0.25)
+    plt.plot(imu_time,filter_results[:-1,11]-accel_bias_gt[:-1,1])
+    plt.fill_between(imu_time,2*np.sqrt(filter_cov[0:-1,11]),-2*np.sqrt(filter_cov[0:-1,11]),alpha=0.25)
+    plt.plot(imu_time,filter_results[:-1,12]-accel_bias_gt[:-1,2])
+    plt.fill_between(imu_time,2*np.sqrt(filter_cov[0:-1,12]),-2*np.sqrt(filter_cov[0:-1,12]),alpha=0.25)
+    plt.title('Filter Acceleration Bias Estimate Error')
+    plt.xlabel('Time [s]')
+    plt.ylabel('Bias Error [m/s/s]')
+    plt.legend(['b_ax','b_ay','b_az'])
+    
+    plt.figure(10)
+    plt.grid(True)
+    plt.plot(imu_time,filter_results[:-1,13]-gyro_bias_gt[:-1,0])
+    plt.fill_between(imu_time,2*np.sqrt(filter_cov[0:-1,13]),-2*np.sqrt(filter_cov[0:-1,13]),alpha=0.25)
+    plt.plot(imu_time,filter_results[:-1,14]-gyro_bias_gt[:-1,1])
+    plt.fill_between(imu_time,2*np.sqrt(filter_cov[0:-1,14]),-2*np.sqrt(filter_cov[0:-1,14]),alpha=0.25)
+    plt.plot(imu_time,filter_results[:-1,15]-gyro_bias_gt[:-1,2])
+    plt.fill_between(imu_time,2*np.sqrt(filter_cov[0:-1,15]),-2*np.sqrt(filter_cov[0:-1,15]),alpha=0.25)
+    plt.title('Filter Gyro Rate Bias Estimate Error')
+    plt.xlabel('Time [s]')
+    plt.ylabel('Bias Error [rad/s/s]')
+    plt.legend(['b_wx','b_wy','b_wz'])
 
     plt.show()
 
@@ -183,35 +425,46 @@ def dubin_uni_noise(t,y):
     omega = y[4]
     w = y[5]
     # dydt = np.array( ((v*np.cos(theta)),(v*np.sin(theta)),(omega),(0),(0)) )
-    dydt = [v*np.cos(theta) + np.random.normal(0,np.sqrt(w)),v*np.sin(theta) + np.random.normal(0,np.sqrt(w)),omega,0,0,0]
+    dydt = [v*np.cos(theta) + np.random.normal(0,np.sqrt(w)),v*np.sin(theta) + np.random.normal(0,np.sqrt(w)),omega + np.random.normal(0,0.5),np.random.normal(0,0.05),np.random.normal(0,0.05),0]
     return dydt
 
 def soln_plotting(truth,est_results):
     pass
 
-def main():
+def main(from_file=False):
 
     # sim params
-    sim_time = [0,20]
-    dt = 0.01
+    sim_time = [0,200]
+    dt = 0.02
     
     # create sensor instances
     imu = IMU()
     gps = GPS()
     compass = Compass()
+    depth = Depth()
 
-    sensors = [imu,gps,compass]
+    sensors = [gps,compass,depth]
 
     # # create nav filter instance
-    nav_filter = StrapdownINS(sensors={'IMU':imu,'GPS':gps,'Compass':compass}, dt=dt)
+    nav_filter = StrapdownINS(sensors={'IMU': imu,'GPS':gps,'Compass':compass,'Depth': depth}, dt=dt)
 
     # run simulation
-    gt_results, measurements, filter_results = run_sim(sim_time,dt,sensors,filter_=nav_filter)
+    if from_file:
+        sensor_data = {'imu': np.load('manual_ctl_5mbox_imu_data.npy')}
+        gt_data = np.load('manual_ctl_5mbox_ground_truth_data.npy')
+        print(gt_data.shape)
+        generated_measurements,est,cov = run_sim_from_file(sim_time,dt,sensors,sensor_data,gt_data,nav_filter)
+        plotting_from_file(sensor_data,generated_measurements,gt_data,est,cov)
+    else:
+        gt_results, measurements, filter_results, filter_cov, accel_bias_gt, gyro_bias_gt, accel_gt, gyro_gt = run_sim(sim_time,dt,sensors,filter_=nav_filter)
+        measurement_plotting(dt,sim_time,gt_results,measurements,filter_results,filter_cov,accel_bias_gt,gyro_bias_gt,accel_gt,gyro_gt)
 
     # plot results
     # nav_filter_plotting(results)
-    measurement_plotting(gt_results,measurements,filter_results)
+    
 
 
 if __name__ == "__main__":
-    main()
+    # collect filenames for data
+
+    main(from_file=True)

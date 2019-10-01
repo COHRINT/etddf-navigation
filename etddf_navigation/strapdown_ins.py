@@ -11,6 +11,8 @@ import yaml
 import numpy as np
 from scipy.linalg import block_diag
 
+# import pudb; pudb.set_trace()
+
 G_ACCEL = 9.80665 # gravitational acceleration [m/s/s]
 
 class StrapdownINS:
@@ -18,12 +20,19 @@ class StrapdownINS:
     Implementation of an aided strapdown intertial navigation filter.  
     State: [x_pos, y_pos, z_pos, x_vel, y_vel, z_vel, 
             q_0, q_1, q_2, q_3, b_ax, b_ay, b_az, b_wx, b_wy, b_wz]
-    """
 
+    Parameters
+    ----------
+    sensors
+        list of sensors to be used in filter
+    dt
+        timestep filter will run at
+    init_est [optional]
+        state to initialize the filter with
+    init_cov [optional]
+        covariance to initialize the filter with
+    """
     def __init__(self, sensors, dt, init_est=None, init_cov=None):
-        """
-        f
-        """
         # filter timestep
         self.dt = dt
 
@@ -33,7 +42,7 @@ class StrapdownINS:
         # initialize estimate and covariance
         initial_pos = np.array([0,0,0],ndmin=1)
         initial_vel = np.array([0,0,0],ndmin=1)
-        initial_attitude = np.array([0,0,0],ndmin=1) # euler angles [deg]
+        initial_attitude = np.array([0,0,-np.pi/2],ndmin=1) # euler angles [deg]
         initial_accel_bias = np.array([0,0,0],ndmin=1) # initial bias values for accelerometer
         initial_gyro_bias = np.array([0,0,0],ndmin=1) # initial bias values for gyroscope
 
@@ -97,7 +106,7 @@ class StrapdownINS:
         # TODO: check the mismatches in biases and gyro measurements
         quaterion_stm = np.array([[0, -(w_x-b_wx), -(w_y-b_wy), -(w_z-b_wz)],
                                     [w_x-b_wx, 0, w_z-b_wz, -(w_y-b_wy)],
-                                    [w_y-b_wx, -(w_z-b_wz), 0, w_x-b_wx],
+                                    [w_y-b_wy, -(w_z-b_wz), 0, w_x-b_wx],
                                     [w_z-b_wz, w_y-b_wy, -(w_x-b_wx), 0]])
 
         # transformation from body frame to inertial frame
@@ -105,13 +114,13 @@ class StrapdownINS:
                                     [2*(q1*q2+q0*q3),1-2*(q1**2+q3**2),2*(q2*q3-q0*q1)],
                                     [2*(q1*q3-q0*q2),2*(q2*q3-q0*q1),1-2*(q1**2+q2**2)]])
 
-
         # create updated xdot
         self.xdot = np.zeros([16])
 
         pos_dot = np.array([x_vel,y_vel,z_vel])
         vel_dot = np.dot(body2inertial,(np.array([a_x,a_y,a_z])-np.array([b_ax,b_ay,b_az])).transpose()) + np.array([0,0,G_ACCEL])
-        q_dot = np.dot(quaterion_stm,np.array([q0,q1,q2,q3]).transpose())
+        q_dot = 0.5*np.dot(quaterion_stm,np.array([q0,q1,q2,q3]).transpose())
+        # q_dot = 0.5*quaterion_stm
 
         self.xdot[0:3] = pos_dot
         self.xdot[3:6] = vel_dot
@@ -135,7 +144,7 @@ class StrapdownINS:
         # derivative of velocity wrt attitude
         F_vel_att_der = np.array([[2*(q3*al_y-q2*al_z), -2*(q2*al_y+q3*al_z), 2*(2*q2*al_x-q1*al_y-q0*al_z), 2*(2*q3*al_x+q0*al_y-q1*al_z)],
                         [2*(q1*al_z-q3*al_x), 2*(2*q1*al_y-q2*al_x+q0*al_z), -2*(q1*al_x+q3*al_z), 2*(2*q3*al_y-q0*al_x-q2*al_z)],
-                        [2*(q2*al_x-q1*al_y), 2*(2*q1*al_x-q3*al_x-q0*al_y), 2*(2*q2*al_z-q3*al_y+q0*al_x), -2*(q1*al_x-q2*al_y)]])
+                        [2*(q2*al_x-q1*al_y), 2*(2*q1*al_z-q3*al_x-q0*al_y), 2*(2*q2*al_z-q3*al_y+q0*al_x), -2*(q1*al_x+q2*al_y)]])
 
         # derivative of velocity wrt accelerometer bias estimate
         F_vel_ab_der = np.array([[-1+2*(q2**2+q3**2), -2*(q1*q2-q0*q3), -2*(q1*q3+q0*q2)],
@@ -155,14 +164,23 @@ class StrapdownINS:
 
         # construct process noise matrix
         Q = np.zeros((16,16))
-        Q[3:6,3:6] = np.array(self.sensors['IMU'].accel_noise)
-        Q[6:10,6:10] = self.sensors['IMU'].gyro_noise[0][0]*np.eye(4)
+        Q[3:6,3:6] = 0.1*np.array(self.sensors['IMU'].accel_noise)
+        Q[6:10,6:10] = 0.1*self.sensors['IMU'].gyro_noise[0][0]*np.eye(4)
 
         # numerically integrate dynamics model to propagate estimate and covariance
         # Johnson paper: implements integration with Euler 2nd order for estimate, Euler 1st order for covariance 
         # TODO: implement RK4 or other method
         self.x = self.x + 0.5*self.dt*(self.xdot + last_xdot)
         self.P = self.P + (np.dot(F,self.P)+np.dot(self.P,F.transpose())+Q)*self.dt
+
+        # enforce symmetry
+        self.P = 0.5*self.P + 0.5*self.P.transpose()
+
+        # k1 = self.dt*self.xdot
+        # self.x = self.x + (1/6)*(k1 + 2*k2 + 2*k3 + k4)
+
+        # renormalize quaternion attitude
+        self.x[6:10] = self.x[6:10]/np.linalg.norm(self.x[6:10])
 
     def update(self,measurement,measurement_type):
         """
@@ -178,16 +196,37 @@ class StrapdownINS:
             H[0:3,0:3] = np.eye(3)
             R = self.sensors['GPS'].noise
             h = self.x[0:3]
+        elif measurement_type == 'Depth':
+            H = np.zeros((1,16))
+            H[0,2] = 1
+            R = self.sensors['Depth'].noise
+            h = self.x[2]
         # elif measurement_type == 'Compass':
-        #     H = np.zeros((1,16))
-        #     H[]
-        
+            # H = np.zeros((1,16))
+            # H[0,6] = 
+
         # compute the Kalman gain for the measurement
         K = np.dot(self.P,np.dot(H.transpose(),np.linalg.inv(np.dot(H,np.dot(self.P,H.transpose()))+R)))
+        print(K)
+        
+        try:
+            assert(K.shape == (self.x.shape[0],H.shape[0]))
+        except AssertionError:
+            print('K is the wrong shape!: Is {}, should be {}'.format(K.shape,(self.x.shape[0],H.shape[0])))
+            raise AssertionError
 
         x = np.atleast_2d(self.x).transpose() + np.dot(K,(measurement-h).transpose())
         self.x = np.squeeze(x)
-        self.P = np.dot(np.eye(16)-np.dot(K,H),self.P)
+        # self.P = np.dot(np.eye(16)-np.dot(K,H),self.P)
+        # joseph form
+        self.P = np.dot(np.eye(16)-np.dot(K,H),np.dot(self.P,(np.eye(16)-np.dot(K,H)).transpose())) + np.dot(K,np.dot(R,K.transpose()))
+        # enforce symmetry
+        self.P = 0.5*self.P + 0.5*self.P.transpose()
+
+        # renormalize quaternion attitude
+        print(np.linalg.norm(self.x[6:10]))
+        print(self.x[6:10]/np.linalg.norm(self.x[6:10]))
+        self.x[6:10] = self.x[6:10]/np.linalg.norm(self.x[6:10])
 
     def compute_gravity_vector(self,estimate):
         """
@@ -382,7 +421,7 @@ class IMU(Sensor):
         self.last_gyro_bias = gyro_bias
         self.last_gyro_state = np.array([0,0,ground_truth[10]])
 
-        return accel_meas, gyro_meas
+        return accel_meas, gyro_meas, accel_gt, gyro_gt, accel_bias, gyro_bias
 
 class GPS(Sensor):
 
@@ -435,10 +474,44 @@ class Compass(Sensor):
         measurement = np.mod(measurement,2*np.pi)
         return measurement
 
+class Depth(Sensor):
+
+    def __init__(self,cfg_path=None):
+        super(Depth,self).__init__(cfg_path=cfg_path)
+
+    def gen_measurement(self,ground_truth):
+        """
+        Generate simulated heading measurement using ground truth data 
+        and gaussian noise.
+
+        Parameters
+        ----------
+        ground_truth
+            true 12 DOF state of vehicle
+
+        Returns
+        -------
+        measurement
+            computed measurement for sensor
+        """
+        true_depth = np.array([ground_truth[2]])
+        noise = np.random.normal(0,self.noise)
+        measurement = true_depth + noise
+        return measurement
+
 def main():
-    GPS()
-    IMU()
-    Compass()
+    g = GPS()
+    i = IMU()
+    c = Compass()
+
+    nf = StrapdownINS([g,i,c],0.1)
+
+    euler_angles = [1.75,0.4938,2.4583]
+    quat = nf.euler2quat(euler_angles)
+    euler_cov = nf.quat2euler(quat)
+
+    print(euler_angles)
+    print(euler_cov)
 
 if __name__ == "__main__":
     main()
