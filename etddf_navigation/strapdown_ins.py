@@ -40,26 +40,26 @@ class StrapdownINS:
         self.sensors = sensors
 
         # initialize estimate and covariance
-        initial_pos = np.array([0,0,0],ndmin=1)
-        initial_vel = np.array([0,0,0],ndmin=1)
-        initial_attitude = np.array([0,0,-np.pi/2],ndmin=1) # euler angles [deg]
-        initial_accel_bias = np.array([0,0,0],ndmin=1) # initial bias values for accelerometer
-        initial_gyro_bias = np.array([0,0,0],ndmin=1) # initial bias values for gyroscope
+        initial_pos = np.array([0.0,0.0,0.0],ndmin=1)
+        initial_vel = np.array([0.0,0.0,0.0],ndmin=1)
+        initial_attitude = np.array([0.0,0.0,np.pi/2],ndmin=1) # euler angles [deg]
+        initial_accel_bias = np.array([0.0,0.0,0.0],ndmin=1) # initial bias values for accelerometer
+        initial_gyro_bias = np.array([0.0,0.0,0.0],ndmin=1) # initial bias values for gyroscope
 
         # convert initial attitude to quaternion
-        init_att_quat = self.euler2quat(initial_attitude,deg=True)
+        # init_att_quat = self.euler2quat(initial_attitude,deg=True)
 
         self.x = np.concatenate([initial_pos,
                                 initial_vel,
-                                init_att_quat,
+                                initial_attitude,
                                 initial_accel_bias,
                                 initial_gyro_bias])
 
-        init_pos_cov = 1000*np.eye(3)
+        init_pos_cov = 100*np.eye(3)
         init_vel_cov = 10*np.eye(3)
-        init_att_cov = 1*np.eye(4)
-        init_ab_cov = 1*np.eye(3)
-        init_gb_cov = 1*np.eye(3)
+        init_att_cov = 0.3*np.eye(3)
+        init_ab_cov = 1e-5*np.eye(3)
+        init_gb_cov = 1e-5*np.eye(3)
 
         self.P = block_diag(init_pos_cov,
                             init_vel_cov,
@@ -68,7 +68,9 @@ class StrapdownINS:
                             init_gb_cov)
 
         # initialize xdot vector
-        self.xdot = np.zeros([16])
+        self.xdot = np.zeros([15])
+
+        self.dcm = self.ypr_rotation_r2b(initial_attitude[0],initial_attitude[1],initial_attitude[2])
 
     def get_estimate(self,cov=False):
         """
@@ -96,91 +98,81 @@ class StrapdownINS:
         # extract relevant estimate states, and measurement elements for clarity
         x_pos = self.x[0]; y_pos = self.x[1]; z_pos = self.x[2]
         x_vel = self.x[3]; y_vel = self.x[4]; z_vel = self.x[5]
-        q0 = self.x[6]; q1 = self.x[7]; q2 = self.x[8]; q3 = self.x[9]
-        b_ax = self.x[10]; b_ay = self.x[11]; b_az = self.x[12]
-        b_wx = self.x[13]; b_wy = self.x[14]; b_wz = self.x[15]
+        roll = self.x[6]; pitch = self.x[7]; yaw = self.x[8]
+        b_ax = self.x[9]; b_ay = self.x[10]; b_az = self.x[11]
+        b_wx = self.x[12]; b_wy = self.x[13]; b_wz = self.x[14]
 
         a_x = imu_measurement[0]; a_y = imu_measurement[1]; a_z = imu_measurement[2]
         w_x = imu_measurement[3]; w_y = imu_measurement[4]; w_z = imu_measurement[5]
-        
-        # TODO: check the mismatches in biases and gyro measurements
-        quaterion_stm = np.array([[0, -(w_x-b_wx), -(w_y-b_wy), -(w_z-b_wz)],
-                                    [w_x-b_wx, 0, w_z-b_wz, -(w_y-b_wy)],
-                                    [w_y-b_wy, -(w_z-b_wz), 0, w_x-b_wx],
-                                    [w_z-b_wz, w_y-b_wy, -(w_x-b_wx), 0]])
-
-        # transformation from body frame to inertial frame
-        body2inertial = np.array([[1-2*(q2**2+q3**2),2*(q1*q2-q0*q3),2*(q1*q3+q0*q2)],
-                                    [2*(q1*q2+q0*q3),1-2*(q1**2+q3**2),2*(q2*q3-q0*q1)],
-                                    [2*(q1*q3-q0*q2),2*(q2*q3-q0*q1),1-2*(q1**2+q2**2)]])
 
         # create updated xdot
-        self.xdot = np.zeros([16])
+        self.xdot = np.zeros([15])
 
-        pos_dot = np.array([x_vel,y_vel,z_vel])
-        vel_dot = np.dot(body2inertial,(np.array([a_x,a_y,a_z])-np.array([b_ax,b_ay,b_az])).transpose()) + np.array([0,0,G_ACCEL])
-        q_dot = 0.5*np.dot(quaterion_stm,np.array([q0,q1,q2,q3]).transpose())
-        # q_dot = 0.5*quaterion_stm
+        # xpos_dot = xvel
+        self.xdot[0:3] = last_xdot[3:6]
 
-        self.xdot[0:3] = pos_dot
-        self.xdot[3:6] = vel_dot
-        self.xdot[6:10] = q_dot
+        # create transformation from intertial to body
+        # rotation_mat_i2b = self.ypr_rotation_r2b(roll,pitch,yaw)
 
-        # derivative of attitude change wrt itself
-        F_att_der = 0.5*np.array([[0, b_wx-w_x, b_wy-w_y, b_wz-w_z],
-                            [-b_wx+w_x, 0, -b_wz+w_z, b_wy-w_y],
-                            [-b_wy+w_y, b_wz-w_z, 0, -b_wx+w_x],
-                            [-b_wz+w_z, -b_wy+w_y, b_wx-w_x,0]])
+        # subtract bias best estimate from imu measurements
+        force_vec_bias_corrected = np.array([a_x-b_ax,a_y-b_ay,a_z-b_az])
+        angle_rate_bias_corrected = np.array([w_x-b_wx,w_y-b_wy,w_z-b_wz])
 
-        # derivative of attitude change wrt gyro bias estimate
-        F_att_gb_der = 0.5*np.array([[q1,q2,q3],
-                            [-q0,q3,-q2],
-                            [-q3,-q0,q1],
-                            [q2,-q1,-q0]])
+        force_vec_bias_uncorrected = np.array([a_x,a_y,a_z])
+        angle_rate_bias_uncorrected = np.array([w_x,w_y,w_z])
 
-        # convenience definitions of bias-corrected IMU acceleration measurements
-        al_x = b_ax-a_x; al_y = b_ay-a_y; al_z = b_az-a_z
+        gravity_vec = np.array([0,0,G_ACCEL])
 
-        # derivative of velocity wrt attitude
-        F_vel_att_der = np.array([[2*(q3*al_y-q2*al_z), -2*(q2*al_y+q3*al_z), 2*(2*q2*al_x-q1*al_y-q0*al_z), 2*(2*q3*al_x+q0*al_y-q1*al_z)],
-                        [2*(q1*al_z-q3*al_x), 2*(2*q1*al_y-q2*al_x+q0*al_z), -2*(q1*al_x+q3*al_z), 2*(2*q3*al_y-q0*al_x-q2*al_z)],
-                        [2*(q2*al_x-q1*al_y), 2*(2*q1*al_z-q3*al_x-q0*al_y), 2*(2*q2*al_z-q3*al_y+q0*al_x), -2*(q1*al_x+q2*al_y)]])
+        rate_matrix = np.array([[0,-angle_rate_bias_corrected[2],angle_rate_bias_corrected[1]],
+                                [angle_rate_bias_corrected[2],0,-angle_rate_bias_corrected[0]],
+                                [-angle_rate_bias_corrected[1],angle_rate_bias_corrected[0],0]])
+        # rate_matrix = np.array([[0,-angle_rate_bias_uncorrected[2],angle_rate_bias_uncorrected[1]],
+        #                         [angle_rate_bias_uncorrected[2],0,-angle_rate_bias_uncorrected[0]],
+        #                         [-angle_rate_bias_uncorrected[1],angle_rate_bias_uncorrected[0],0]])
 
-        # derivative of velocity wrt accelerometer bias estimate
-        F_vel_ab_der = np.array([[-1+2*(q2**2+q3**2), -2*(q1*q2-q0*q3), -2*(q1*q3+q0*q2)],
-                        [-2*(q0*q3+q1*q2), -1+2*(q1**2+q3**2), -2*(q2*q3-q0*q1)],
-                        [-2*(q1*q3-q0*q2), -2*(q0*q1+q2*q3), -1+2*(q1**2+q2**2)]])
+        # integrate rotation DCM -- first order approximation
+        # dcm_dot = np.dot(self.dcm,rate_matrix)
+        self.dcm = self.ypr_rotation_r2b(self.x[6],self.x[7],self.x[8])
+        self.dcm = np.dot(self.dcm,np.eye(3)+rate_matrix*self.dt)
 
-        # derivative of position wrt velocity
-        F_pos_der = np.eye(3)
+        xpos_dot = self.x[3:6]
+        xvel_dot = np.dot(self.dcm,force_vec_bias_corrected) - gravity_vec
+        # xvel_dot = np.dot(self.dcm,force_vec_bias_uncorrected) - gravity_vec
 
-        # construct linearized dynamics stm
-        F = np.zeros([16,16])
-        F[0:3,3:6] = F_pos_der
-        F[3:6,6:10] = F_vel_att_der
-        F[3:6,10:13] = F_vel_ab_der
-        F[6:10,6:10] = F_att_der
-        F[6:10,13:16] = F_att_gb_der
+        self.x[0:3] = self.x[0:3] + xpos_dot*self.dt #+ xvel_dot*self.dt**2
+        self.x[3:6] = self.x[3:6] + xvel_dot*self.dt
 
-        # construct process noise matrix
-        Q = np.zeros((16,16))
-        Q[3:6,3:6] = 0.1*np.array(self.sensors['IMU'].accel_noise)
-        Q[6:10,6:10] = 0.1*self.sensors['IMU'].gyro_noise[0][0]*np.eye(4)
+        roll = np.arctan2(self.dcm[1,2],self.dcm[2,2])
+        pitch = -np.arcsin(self.dcm[0,2])
+        yaw = np.arctan2(self.dcm[0,1],self.dcm[0,0])
 
-        # numerically integrate dynamics model to propagate estimate and covariance
-        # Johnson paper: implements integration with Euler 2nd order for estimate, Euler 1st order for covariance 
-        # TODO: implement RK4 or other method
-        self.x = self.x + 0.5*self.dt*(self.xdot + last_xdot)
-        self.P = self.P + (np.dot(F,self.P)+np.dot(self.P,F.transpose())+Q)*self.dt
+        self.x[6] = roll
+        self.x[7] = pitch
+        self.x[8] = yaw
 
-        # enforce symmetry
-        self.P = 0.5*self.P + 0.5*self.P.transpose()
+        # propagate covariance
+        self.stm = np.eye(15)
+        # position
+        self.stm[0:3,3:6] = np.eye(3)*self.dt
+        # velocity
+        rot_force = np.dot(self.dcm,force_vec_bias_corrected)
+        # rot_force = -1*np.dot(self.dcm,force_vec_bias_corrected)
+        # rot_force = -1*np.dot(self.dcm,force_vec_bias_uncorrected)
+        self.stm[3:6,6:9] = self.dt*np.array([[0,-rot_force[2],rot_force[1]],
+                                    [rot_force[2],0,-rot_force[0]],
+                                    [-rot_force[1],rot_force[0],0]])
+        self.stm[3:6,9:12] = self.dt*self.dcm
+        # attitude
+        self.stm[6:9,12:15] = self.dt*self.dcm
 
-        # k1 = self.dt*self.xdot
-        # self.x = self.x + (1/6)*(k1 + 2*k2 + 2*k3 + k4)
+        # noise
+        Q = np.zeros((15,15))
+        Q[3:6,3:6] = np.array(self.sensors['IMU'].accel_noise)*self.dt
+        Q[6:9,6:9] = np.array(self.sensors['IMU'].gyro_noise)*self.dt
+        Q[9:12,9:12] = self.sensors['IMU'].accel_bias*np.eye(3)*self.dt
+        Q[12:15,12:15] = self.sensors['IMU'].gyro_bias*np.eye(3)*self.dt
 
-        # renormalize quaternion attitude
-        self.x[6:10] = self.x[6:10]/np.linalg.norm(self.x[6:10])
+        self.P = np.dot(self.stm,np.dot(self.P,self.stm.transpose())) + Q*self.dt
 
     def update(self,measurement,measurement_type):
         """
@@ -192,22 +184,39 @@ class StrapdownINS:
             available measurements at current timestep
         """
         if measurement_type == 'GPS':
-            H = np.zeros((3,16))
+            H = np.zeros((3,15))
             H[0:3,0:3] = np.eye(3)
             R = self.sensors['GPS'].noise
             h = self.x[0:3]
         elif measurement_type == 'Depth':
-            H = np.zeros((1,16))
+            H = np.zeros((1,15))
             H[0,2] = 1
             R = self.sensors['Depth'].noise
             h = self.x[2]
-        # elif measurement_type == 'Compass':
-            # H = np.zeros((1,16))
-            # H[0,6] = 
+        elif measurement_type == 'GPS_x':
+            H = np.zeros((1,15))
+            H[0,0] = 1
+            R = self.sensors['GPS'].noise[0,0]
+            h = self.x[0]
+        elif measurement_type == 'GPS_y':
+            H = np.zeros((1,15))
+            H[0,1] = 1
+            R = self.sensors['GPS'].noise[1,1]
+            h = self.x[1]
+        elif measurement_type == 'GPS_z':
+            H = np.zeros((1,15))
+            H[0,2] = 1
+            R = self.sensors['GPS'].noise[2,2]
+            h = self.x[2]
+        elif measurement_type == 'Compass':
+            H = np.zeros((1,15))
+            H[0,8] = 1
+            R = self.sensors['Compass'].noise
+            h = self.x[8] 
 
         # compute the Kalman gain for the measurement
         K = np.dot(self.P,np.dot(H.transpose(),np.linalg.inv(np.dot(H,np.dot(self.P,H.transpose()))+R)))
-        print(K)
+        # print(K)
         
         try:
             assert(K.shape == (self.x.shape[0],H.shape[0]))
@@ -217,16 +226,16 @@ class StrapdownINS:
 
         x = np.atleast_2d(self.x).transpose() + np.dot(K,(measurement-h).transpose())
         self.x = np.squeeze(x)
-        # self.P = np.dot(np.eye(16)-np.dot(K,H),self.P)
+        self.P = np.dot(np.eye(15)-np.dot(K,H),self.P)
         # joseph form
-        self.P = np.dot(np.eye(16)-np.dot(K,H),np.dot(self.P,(np.eye(16)-np.dot(K,H)).transpose())) + np.dot(K,np.dot(R,K.transpose()))
+        # self.P = np.dot(np.eye(15)-np.dot(K,H),np.dot(self.P,(np.eye(15)-np.dot(K,H)).transpose())) + np.dot(K,np.dot(R,K.transpose()))
         # enforce symmetry
         self.P = 0.5*self.P + 0.5*self.P.transpose()
 
         # renormalize quaternion attitude
-        print(np.linalg.norm(self.x[6:10]))
-        print(self.x[6:10]/np.linalg.norm(self.x[6:10]))
-        self.x[6:10] = self.x[6:10]/np.linalg.norm(self.x[6:10])
+        # print(np.linalg.norm(self.x[6:10]))
+        # print(self.x[6:10]/np.linalg.norm(self.x[6:10]))
+        # self.x[6:10] = self.x[6:10]/np.linalg.norm(self.x[6:10])
 
     def compute_gravity_vector(self,estimate):
         """
@@ -248,6 +257,54 @@ class StrapdownINS:
         """
         pass
 
+    def ypr_rotation_b2r(self,roll,pitch,yaw,deg=False):
+        """
+        Create a yaw pitch roll rotation matrix from body to reference frame. Assumes radian inputs by default.
+        Use deg flag to specify degrees.
+        """
+        if deg:
+            roll *= np.pi/180
+            pitch *= np.pi/180
+            yaw *= np.pi/180
+
+        roll_mat = np.array([[1,0,0],
+                            [0,np.cos(roll),-np.sin(roll)],
+                            [0,np.sin(roll),np.cos(roll)]])
+
+        pitch_mat = np.array([[np.cos(pitch),0,np.sin(pitch)],
+                            [0,1,0],
+                            [-np.sin(pitch),0,np.cos(pitch)]])
+
+        yaw_mat = np.array([[np.cos(yaw),-np.sin(yaw),0],
+                            [np.sin(yaw),np.cos(yaw),0],
+                            [0,0,1]])
+
+        return np.dot(roll_mat,np.dot(pitch_mat,yaw_mat))
+
+    def ypr_rotation_r2b(self,roll,pitch,yaw,deg=False):
+        """
+        Create a yaw pitch roll rotation matrix from reference frame to body. Assumes radian inputs by default.
+        Use deg flag to specify degrees.
+        """
+        if deg:
+            roll *= np.pi/180
+            pitch *= np.pi/180
+            yaw *= np.pi/180
+
+        roll_mat = np.array([[1,0,0],
+                            [0,np.cos(roll),np.sin(roll)],
+                            [0,-np.sin(roll),np.cos(roll)]])
+
+        pitch_mat = np.array([[np.cos(pitch),0,-np.sin(pitch)],
+                            [0,1,0],
+                            [np.sin(pitch),0,np.cos(pitch)]])
+
+        yaw_mat = np.array([[np.cos(yaw),np.sin(yaw),0],
+                            [-np.sin(yaw),np.cos(yaw),0],
+                            [0,0,1]])
+
+        return np.dot(roll_mat,np.dot(pitch_mat,yaw_mat))
+
     def euler2quat(self,angles,deg=False):
         """
         Convert euler angle representation to quaternion.
@@ -263,7 +320,7 @@ class StrapdownINS:
         Returns
         -------
         quat
-            quaternion representation: follows [q0, q1, q2, q3]
+            quaternion representation: follows [q0, q1, q2, q3] = [qw, qx, qy, qz]
         """
         # extract individual angles
         roll = angles[0]; pitch = angles[1]; yaw = angles[2]
@@ -297,7 +354,7 @@ class StrapdownINS:
         Parameters
         ----------
         quat
-            quaternion representation: follows [q0, q1, q2, q3]
+            quaternion representation: follows [q0, q1, q2, q3] = [qw, qx, qy, qz]
         deg (optional)
             units of output euler angles -- defaults to False for radians
 
@@ -443,7 +500,7 @@ class GPS(Sensor):
         measurement
             computed measurement for sensor
         """
-        true_pos = np.array([ground_truth[0],ground_truth[2],ground_truth[4]])
+        true_pos = np.array([ground_truth[0],ground_truth[1],ground_truth[2]])
         noise = np.random.multivariate_normal([0,0,0],self.noise)
         measurement = true_pos + noise
         return measurement
@@ -468,7 +525,7 @@ class Compass(Sensor):
         measurement
             computed measurement for sensor
         """
-        true_heading = np.array([ground_truth[10]])
+        true_heading = np.array([ground_truth[8]])
         noise = np.random.normal(0,self.noise)
         measurement = true_heading + noise
         measurement = np.mod(measurement,2*np.pi)

@@ -5,11 +5,13 @@ rate: 100 # Hz
 accel_scale_factor: 0.01
 accel_bias: 0.0001 # m/s^3/sqrt(Hz)
 accel_bias_tc: 0.005
-accel_noise: [[0.001,0,0],[0,0.001,0],[0,0,0.001]]
+# accel_noise: [[0.001,0,0],[0,0.001,0],[0,0,0.001]]
+accel_noise: [[0.01,0,0],[0,0.01,0],[0,0,0.01]]
 
 gyro_scale_factor: 0.01
 gyro_bias: 0.0001 # m/s^3/sqrt(Hz)
 gyro_bias_tc: 0.005
-gyro_noise: [[0.0001,0,0],[0,0.0001,0],[0,0,0.0001]]
+# gyro_noise: [[0.0001,0,0],[0,0.0001,0],[0,0,0.0001]]
+gyro_noise: [[0.01,0,0],[0,0.01,0],[0,0,0.01]]
 
 noise: [[1,0,0],[0,1,0],[0,0,1]]

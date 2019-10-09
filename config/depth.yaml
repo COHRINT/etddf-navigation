@@ -1,0 +1,5 @@
+# depth sensor configuration file
+
+noise: 1
+error_models: None
+rate: 10 # Hz
