@@ -1,0 +1,5 @@
+# DVL sensor configuration file
+
+noise: [[0.25,0,0],[0,0.25,0],[0,0,0.25]]
+error_models: None
+rate: 1 # Hz
