@@ -46,7 +46,7 @@ class StrapdownINS:
         else:
             initial_pos = np.array([0.0,0.0,0.0],ndmin=1)
             initial_vel = np.array([0.0,0.0,0.0],ndmin=1)
-            initial_attitude = np.array([0.0,0.0,0.0],ndmin=1) # euler angles [deg]
+            initial_attitude = np.array([0.0,10*np.pi/180,np.pi/2],ndmin=1) # euler angles [deg]
             initial_accel_bias = np.array([0.0,0.0,0.0],ndmin=1) # initial bias values for accelerometer
             initial_gyro_bias = np.array([0.0,0.0,0.0],ndmin=1) # initial bias values for gyroscope
 
@@ -117,6 +117,10 @@ class StrapdownINS:
         a_x = imu_measurement[0]; a_y = imu_measurement[1]; a_z = imu_measurement[2]
         w_x = imu_measurement[3]; w_y = imu_measurement[4]; w_z = imu_measurement[5]
 
+        if w_x < 1e-3: w_x = 0
+        if w_y < 1e-3: w_x = 0
+        if w_z < 1e-3: w_x = 0
+
         # create updated xdot
         self.xdot = np.zeros([15])
 
@@ -127,8 +131,8 @@ class StrapdownINS:
         # rotation_mat_i2b = self.ypr_rotation_r2b(roll,pitch,yaw)
 
         # subtract bias best estimate from imu measurements
-        force_vec_bias_corrected = np.array([a_x-b_ax,a_y-b_ay,a_z-b_az])
-        angle_rate_bias_corrected = np.array([w_x-b_wx,w_y-b_wy,w_z-b_wz])
+        force_vec_bias_corrected = np.array([a_x+b_ax,a_y+b_ay,a_z+b_az])
+        angle_rate_bias_corrected = np.array([w_x+b_wx,w_y+b_wy,w_z+b_wz])
 
         force_vec_bias_uncorrected = np.array([a_x,a_y,a_z])
         angle_rate_bias_uncorrected = np.array([w_x,w_y,w_z])
@@ -166,8 +170,8 @@ class StrapdownINS:
         # self.dcm[2,:] = self.dcm[2,:]/np.linalg.norm(self.dcm[2,:])
 
         # rotate accelerations to intertial NED
-        force_platform = np.dot(self.dcm,force_vec_bias_corrected)
-        # force_platform = np.dot(0.5*(last_dcm + self.dcm),force_vec_bias_corrected)
+        # force_platform = np.dot(self.dcm,force_vec_bias_uncorrected)
+        force_platform = np.dot(0.5*(last_dcm + self.dcm),force_vec_bias_corrected)
         # NED to ENU
         # force_platform[1] = -1*force_platform[1]
         # force_platform[2] = -1*force_platform[2]
@@ -236,7 +240,7 @@ class StrapdownINS:
         Q[9:12,9:12] = self.sensors['IMU'].accel_bias*np.eye(3)*self.dt#*self.sensors['IMU'].accel_bias_tc
         Q[12:15,12:15] = self.sensors['IMU'].gyro_bias*np.eye(3)*self.dt#*self.sensors['IMU'].gyro_bias_tc
 
-        self.P = np.dot(self.stm,np.dot(self.P,self.stm.transpose())) + Q
+        self.P = np.dot(self.stm,np.dot(self.P,self.stm.transpose())) #+ Q
 
     def update(self,measurement,measurement_type):
         """
@@ -619,7 +623,7 @@ class IMU(Sensor):
         accel_gt = accel[0:3]
         accel_bias = self.last_accel_bias + np.exp(-(1/self.rate)/self.accel_bias_tc)*np.random.multivariate_normal([0,0,0],np.eye(3)*self.accel_bias)
         accel_noise = np.random.multivariate_normal([0,0,0],self.accel_noise)
-        accel_meas = accel_gt + accel_noise + accel_bias
+        accel_meas = accel_gt + accel_bias #+ accel_noise + accel_bias
 
         self.last_accel_bias = accel_bias
         self.last_accel_state = accel[0:3]
@@ -627,7 +631,7 @@ class IMU(Sensor):
         gyro_gt = accel[3:]
         gyro_bias = self.last_gyro_bias + np.exp(-(1/self.rate)/self.gyro_bias_tc)*np.random.multivariate_normal([0,0,0],np.eye(3)*self.gyro_bias)
         gyro_noise = np.random.multivariate_normal([0,0,0],self.gyro_noise)
-        gyro_meas = gyro_gt + gyro_noise + gyro_bias
+        gyro_meas = gyro_gt + gyro_bias #+ gyro_noise + gyro_bias
 
         self.last_gyro_bias = gyro_bias
         self.last_gyro_state = accel[3:]

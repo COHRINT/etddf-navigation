@@ -38,13 +38,13 @@ class SimpleNavSim:
         # sim time steps
         time_steps = np.arange(0,self.sim_time[1],self.dt)
         # assume linear accelerations only along body x axis in NED body frame
-        x_accel = lambda t: 0.0*np.sin(t*3*np.pi/self.sim_time[1])
-        y_accel = lambda t: 0.0*np.sin(t*3*np.pi/self.sim_time[1])
-        z_accel = lambda t: 0.0*np.sin(t*3*np.pi/self.sim_time[1])
+        x_accel = lambda t: 0.1*np.sin(t*3*np.pi/self.sim_time[1])
+        y_accel = lambda t: -0.1*np.sin(t*3*np.pi/self.sim_time[1])
+        z_accel = lambda t: 1.1*np.sin(t*3*np.pi/self.sim_time[1])
         # generate yaw rates
-        roll_rate = lambda t: 0.01*np.sin(t*2*np.pi/self.sim_time[1])
-        pitch_rate = lambda t: 0.0*np.sin(t*2*np.pi/self.sim_time[1])
-        yaw_rate = lambda t: 0.0*np.sin(t*2*np.pi/self.sim_time[1])
+        roll_rate = lambda t: 0.1*np.sin(t*2*np.pi/self.sim_time[1])
+        pitch_rate = lambda t: 0.1*np.sin(t*2*np.pi/self.sim_time[1])
+        yaw_rate = lambda t: 0.1*np.sin(t*2*np.pi/self.sim_time[1])
 
         def dydt(t,y):
             roll,pitch,yaw = y[6:9]
@@ -55,7 +55,7 @@ class SimpleNavSim:
 
         # integrate accelerations and ang. rates to get vehicle trajectory
         true_state = np.zeros((time_steps.shape[0],15))
-        y0 = [0,0,0,0,0,0,0,0,0]
+        y0 = [0,0,0,0,0,0,0,10*np.pi/180,np.pi/2]
         # for i,t in enumerate(time_steps):
         soln = solve_ivp(dydt,[0,self.sim_time[1]],y0,t_eval=time_steps)
         soln = np.transpose(soln.y)
@@ -381,7 +381,7 @@ def main():
     # nav_filter = StrapdownINS(sensors={'IMU':imu,'GPS':gps}, dt=0.01)
 
     # create sim instance
-    sim = SimpleNavSim(dt=0.01,navfilter=nav_filter)
+    sim = SimpleNavSim(dt=0.01,navfilter=nav_filter,sim_time=[0,50])
 
     time_steps, true_state = sim.create_sim_data()
     filter_state, filter_cov, sensor_measurements = sim.run_filter(time_steps,true_state)
