@@ -1,5 +1,6 @@
 # Compass configuration file
 
-noise: 0.0872664626 # [rad] = 5 [deg]
+# noise: 0.0872664626 # [rad] = 5 [deg]
+noise: 0.007615435494667714 # [rad^2] = (5 deg)^2
 rate: 10 # [Hz]
 error_models: None
