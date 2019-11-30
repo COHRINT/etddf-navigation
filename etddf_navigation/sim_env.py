@@ -221,11 +221,6 @@ def plotting_from_file(sim_time,dt,sensor_data,generated_measurements,gt_data,es
     imu_time = np.arange(0,(sensor_data['imu'].shape[0]+1)*dt,dt)
     # gps_time = np.arange(sim_time[0],sim_time[1],0.1)
 
-    gt_data_enu = np.copy(gt_data)
-    gt_data[:,0] = gt_data_enu[:,1]
-    gt_data[:,1] = gt_data_enu[:,0]
-    gt_data[:,2] = -1*gt_data_enu[:,2]
-
     fig1 = plt.figure(1)
     plt.grid(True)
     ax = fig1.add_subplot(111, projection='3d')

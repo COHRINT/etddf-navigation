@@ -85,6 +85,10 @@ class StrapdownINS:
         # Kalman gain storage
         self.gps_gains = np.empty((16,3,1))
 
+        # state and cov history
+        self.state_history = [self.x]
+        self.cov_history = [self.P]
+
     def get_estimate(self,cov=False):
         """
         Return estimate and (optionally) covariance.
@@ -162,7 +166,7 @@ class StrapdownINS:
                                 [2*(q1*q3-q0*q2), 2*(q0*q1+q2*q3), q0**2-q1**2-q2**2+q3**2]])
 
         # propagate velocity
-        vel_dot = np.dot(body2inertial,(np.array([a_x,a_y,a_z])-np.array([b_ax,b_ay,b_az])).transpose()) #+ np.array([0,0,G_ACCEL])
+        vel_dot = np.dot(body2inertial,(np.array([a_x,a_y,a_z])-np.array([b_ax,b_ay,b_az])).transpose()) - np.array([0,0,G_ACCEL])
         self.x[3:6] = self.x[3:6] + vel_dot*self.dt
 
         # propagate position
@@ -219,8 +223,10 @@ class StrapdownINS:
 
         # construct process noise matrix
         Q = np.zeros((16,16))
-        Q[3:6,3:6] = 0.1*np.array(self.sensors['IMU'].accel_noise)
-        Q[6:10,6:10] = 0.1*self.sensors['IMU'].gyro_noise[0][0]*np.eye(4)
+        Q[3:6,3:6] = 50*np.array(self.sensors['IMU'].accel_noise)*self.dt
+        Q[6:10,6:10] = 100*self.sensors['IMU'].gyro_noise[0][0]*np.eye(4)*self.dt
+        Q[10:13,10:13] = 3*self.sensors['IMU'].accel_bias*self.dt
+        Q[13:16,13:16] = 7*self.sensors['IMU'].gyro_bias*self.dt
 
         # numerically integrate dynamics model to propagate estimate and covariance
         # Johnson paper: implements integration with Euler 2nd order for estimate, Euler 1st order for covariance 
@@ -278,16 +284,27 @@ class StrapdownINS:
         elif measurement_type == 'Compass':
             H = np.zeros((1,16))
             # H[0:4,6:10] = np.eye(4)
-            q0 = self.x[0]
-            q1 = self.x[1]
-            q2 = self.x[2]
-            q3 = self.x[3]
-            H[0,6] = -(2*q3)/(((2*q0*q3 + 2*q1*q2)**2/(2*q2**2 + 2*q3**3 - 1)**2 + 1)*(2*q2**2 + 2*q3**3 - 1))
-            H[0,7] = -(2*q2)/(((2*q0*q3 + 2*q1*q2)**2/(2*q2**2 + 2*q3**3 - 1)**2 + 1)*(2*q2**2 + 2*q3**3 - 1))
-            H[0,8] = -((2*q1)/(2*q2**2 + 2*q3**3 - 1) - (4*q2*(2*q0*q3 + 2*q1*q2))/(2*q2**2 + 2*q3**3 - 1)**2)/((2*q0*q3 + 2*q1*q2)**2/(2*q2**2 + 2*q3**3 - 1)**2 + 1)
-            H[0,9] = -((2*q0)/(2*q2**2 + 2*q3**3 - 1) - (6*q3**2*(2*q0*q3 + 2*q1*q2))/(2*q2**2 + 2*q3**3 - 1)**2)/((2*q0*q3 + 2*q1*q2)**2/(2*q2**2 + 2*q3**3 - 1)**2 + 1)
+            q0 = self.x[6]
+            q1 = self.x[7]
+            q2 = self.x[8]
+            q3 = self.x[9]
+            # H[0,6] = -(2*q3)/(((2*q0*q3 + 2*q1*q2)**2/(2*q2**2 + 2*q3**3 - 1)**2 + 1)*(2*q2**2 + 2*q3**3 - 1))
+            H[0,6] = -(2*q3)/(((2*q0*q3 + 2*q1*q2)**2/(2*q2**2 + 2*q3**2 - 1)**2 + 1)*(2*q2**2 + 2*q3**2 - 1))
+            # H[0,7] = -(2*q2)/(((2*q0*q3 + 2*q1*q2)**2/(2*q2**2 + 2*q3**3 - 1)**2 + 1)*(2*q2**2 + 2*q3**3 - 1))
+            H[0,7] = -(2*q2)/(((2*q0*q3 + 2*q1*q2)**2/(2*q2**2 + 2*q3**2 - 1)**2 + 1)*(2*q2**2 + 2*q3**2 - 1))
+            # H[0,8] = -((2*q1)/(2*q2**2 + 2*q3**3 - 1) - (4*q2*(2*q0*q3 + 2*q1*q2))/(2*q2**2 + 2*q3**3 - 1)**2)/((2*q0*q3 + 2*q1*q2)**2/(2*q2**2 + 2*q3**3 - 1)**2 + 1)
+            H[0,8] = -((2*q1)/(2*q2**2 + 2*q3**2 - 1) - (4*q2*(2*q0*q3 + 2*q1*q2))/(2*q2**2 + 2*q3**2 - 1)**2)/((2*q0*q3 + 2*q1*q2)**2/(2*q2**2 + 2*q3**2 - 1)**2 + 1)
+            # H[0,9] = -((2*q0)/(2*q2**2 + 2*q3**3 - 1) - (6*q3**2*(2*q0*q3 + 2*q1*q2))/(2*q2**2 + 2*q3**3 - 1)**2)/((2*q0*q3 + 2*q1*q2)**2/(2*q2**2 + 2*q3**3 - 1)**2 + 1)
+            H[0,9] = -((2*q0)/(2*q2**2 + 2*q3**2 - 1) - (4*q3*(2*q0*q3 + 2*q1*q2))/(2*q2**2 + 2*q3**2 - 1)**2)/((2*q0*q3 + 2*q1*q2)**2/(2*q2**2 + 2*q3**2 - 1)**2 + 1)
             R = self.sensors['Compass'].noise
             h = np.arctan2(2*(q0*q3+q1*q2),1-2*(q2**2+q3**2))
+
+            # check if we need to unwrap compass measurement before fusion
+            # if abs(h-measurement) > np.pi:
+                # print('wrapping required')
+            # print('meas: {} est: {}'.format(measurement*180/np.pi,h*180/np.pi))
+            #     measurement = self.unwrap_angle(measurement,h)
+
             # measurement = self.euler2quat((0,0,measurement))
             # self.compass_residuals = np.concatenate((self.compass_residuals,measurement-h))
         elif measurement_type == 'DVL':
@@ -359,18 +376,30 @@ class StrapdownINS:
         enu_vec[2] = -1*ned_vec[2]
         return enu_vec
 
-    def unwrap_angle(self,angle,target_angle,range=[-np.pi,np.pi]):
+    def unwrap_angle(self,angle,target_angle,angle_range=[-np.pi,np.pi]):
         """
         'Unwrap' and angle estimate or measurement by mapping it to the closest point
         to the angle range actually in use. 
         
         For example, for a yaw range of -180 to 180 deg,
         a measurement of -175 deg when the estimate is 175 deg is should be
-        wrapped to 185 deg.
+        unwrapped to 185 deg.
         """
-        pass
+        # compute center of angle range
+        range_center = (angle_range[1] - angle_range[0])/2 + angle_range[0]
 
-    def wrap_angle(self,angle,range=[-np.pi,np.pi]):
+        # compute actual difference between angle and target angle
+        angle_diff = abs(angle) - abs(target_angle)
+
+        # unwrap angles
+        if target_angle < range_center:
+            unwrapped_angle = target_angle - (2*np.pi-abs(angle-target_angle))
+        elif target_angle > range_center:
+            unwrapped_angle = target_angle + (2*np.pi-abs(angle-target_angle))
+
+        return unwrapped_angle
+
+    def wrap_angle(self,angle,angle_range=[-np.pi,np.pi]):
         """
         'Wrap angle estimate or measurement from an unwrapped state back to respecting the
         range of values in use.
@@ -378,7 +407,18 @@ class StrapdownINS:
         For a yaw range of -180 to 180 deg, and estimate that was updated to be 185 deg
         should be mapped back to 0 -175 deg.
         """
-        pass
+        # find which end of the range the unwrapped angle is closest to
+        # if closer to upper end
+        if abs(angle - angle_range[1]) < abs(angle-angle_range[0]):
+            # wrap back to other end of range
+            diff = abs(angle-angle_range[1])
+            wrapped_angle = angle_range[0] + diff
+        # else closer to lower end
+        elif abs(angle - angle_range[1]) > abs(angle-angle_range[0]):
+            diff = abs(angle-angle_range[0])
+            wrapped_angle = angle_range[1] - diff
+
+        return wrapped_angle
 
     def compute_gravity_vector(self,estimate):
         """
@@ -606,7 +646,8 @@ class IMU(Sensor):
             computed measurement for sensor
         """
         accel_gt = np.array([ground_truth[1],ground_truth[3],ground_truth[5] - G_ACCEL]) - self.last_accel_state
-        accel_bias = self.last_accel_bias + np.exp(-(1/self.rate)/self.accel_bias_tc)*np.random.multivariate_normal([0,0,0],np.eye(3)*self.accel_bias)
+        # accel_bias = self.last_accel_bias + np.exp(-(1/self.rate)/self.accel_bias_tc)*np.random.multivariate_normal([0,0,0],np.eye(3)*self.accel_bias)
+        accel_bias = self.last_accel_bias * np.exp(-(1/self.accel_bias_tc)*(self.rate) + np.random.multivariate_normal([0,0,0],np.eye(3)*self.accel_bias))
         accel_noise = np.random.multivariate_normal([0,0,0],self.accel_noise)
         accel_meas = accel_gt + accel_bias + accel_noise
 
@@ -614,7 +655,8 @@ class IMU(Sensor):
         self.last_accel_state = np.array([ground_truth[1],ground_truth[3],ground_truth[5]])
 
         gyro_gt = np.array([0,0,ground_truth[10]]) - self.last_gyro_state
-        gyro_bias = self.last_gyro_bias + np.exp(-(1/self.rate)/self.gyro_bias_tc)*np.random.multivariate_normal([0,0,0],np.eye(3)*self.gyro_bias)
+        # gyro_bias = self.last_gyro_bias + np.exp(-(1/self.rate)/self.gyro_bias_tc)*np.random.multivariate_normal([0,0,0],np.eye(3)*self.gyro_bias)
+        gyro_bias = self.last_gyro_bias * np.exp(-(1/self.gyro_bias_tc)*(self.rate) + np.random.multivariate_normal([0,0,0],np.eye(3)*self.gyro_bias))
         gyro_noise = np.random.multivariate_normal([0,0,0],self.gyro_noise)
         gyro_meas = gyro_gt + gyro_bias + gyro_noise
 
@@ -628,7 +670,8 @@ class IMU(Sensor):
         Generate simulated IMU measurement from ground truth accelerations (not included in other gt vector).
         """
         accel_gt = accel[0:3]
-        accel_bias = self.last_accel_bias + np.exp(-(1/self.rate)/self.accel_bias_tc)*np.random.multivariate_normal([0,0,0],np.eye(3)*self.accel_bias)
+        # accel_bias = self.last_accel_bias + np.exp(-(1/self.rate)/self.accel_bias_tc)*np.random.multivariate_normal([0,0,0],np.eye(3)*self.accel_bias)
+        accel_bias = self.last_accel_bias * np.exp(-(1/self.accel_bias_tc)*(self.rate)) + np.random.multivariate_normal([0,0,0],np.eye(3)*self.accel_bias)
         accel_noise = np.random.multivariate_normal([0,0,0],self.accel_noise)
         accel_meas = accel_gt + accel_bias + accel_noise #+ accel_bias
 
@@ -636,7 +679,8 @@ class IMU(Sensor):
         self.last_accel_state = accel[0:3]
 
         gyro_gt = accel[3:]
-        gyro_bias = self.last_gyro_bias + np.exp(-(1/self.rate)/self.gyro_bias_tc)*np.random.multivariate_normal([0,0,0],np.eye(3)*self.gyro_bias)
+        # gyro_bias = self.last_gyro_bias + np.exp(-(1/self.rate)/self.gyro_bias_tc)*np.random.multivariate_normal([0,0,0],np.eye(3)*self.gyro_bias)
+        gyro_bias = self.last_gyro_bias * np.exp(-(1/self.gyro_bias_tc)*(self.rate)) + np.random.multivariate_normal([0,0,0],np.eye(3)*self.gyro_bias)
         gyro_noise = np.random.multivariate_normal([0,0,0],self.gyro_noise)
         gyro_meas = gyro_gt + gyro_bias + gyro_noise #+ gyro_bias
 

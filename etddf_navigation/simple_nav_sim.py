@@ -20,7 +20,7 @@ import pudb; pudb.set_trace()
 G_ACCEL = 9.80665 # gravitational acceleration [m/s/s]
 # G_ACCEL = 9.799999981484898
 
-np.random.seed(901282)
+# np.random.seed(901282)
 
 class SimpleNavSim:
 
@@ -31,20 +31,20 @@ class SimpleNavSim:
 
         self.filter = navfilter
 
-    def create_sim_data(self,initial_state=np.zeros((15,))):
+    def create_sim_data(self,initial_state=np.zeros((15,)),warm_start=None):
         """
         Create sim data by generating acceleration and angular rate data and integrating.
         """
         # sim time steps
         time_steps = np.arange(0,self.sim_time[1],self.dt)
         # assume linear accelerations only along body x axis in NED body frame
-        x_accel = lambda t: 0.0*np.sin(t*3*np.pi/self.sim_time[1])
+        x_accel = lambda t: 0.1*np.sin(t*3*np.pi/self.sim_time[1])
         y_accel = lambda t: 0.0*np.sin(t*3*np.pi/self.sim_time[1])
-        z_accel = lambda t: 0.1*np.sin(t*3*np.pi/self.sim_time[1])
+        z_accel = lambda t: 0.0*np.sin(t*3*np.pi/self.sim_time[1])
         # generate yaw rates
         roll_rate = lambda t: 0.0*np.sin(t*2*np.pi/self.sim_time[1])
-        pitch_rate = lambda t: 0.1*np.sin(t*2*np.pi/self.sim_time[1])
-        yaw_rate = lambda t: 0.0*np.sin(t*2*np.pi/self.sim_time[1])
+        pitch_rate = lambda t: 0.0*np.sin(t*2*np.pi/self.sim_time[1])
+        yaw_rate = lambda t: 0.05*np.sin(t*2*np.pi/self.sim_time[1])
 
         def dydt(t,y):
             roll,pitch,yaw = y[6:9]
@@ -71,10 +71,17 @@ class SimpleNavSim:
 
         return time_steps, true_state
 
-    def run_filter(self,time_steps,true_state):
+    def run_filter(self,time_steps,true_state,warm_start=None):
         """
         Run navigation filter on ground truth data, generating measurements for filter consumption.
         """
+
+        # add warm start at beginning
+        if warm_start is not None:
+            time_steps = np.arange(0,self.sim_time[1] + warm_start,self.dt)
+            true_state = np.concatenate((np.zeros((time_steps.shape[0]-true_state.shape[0], 15)),true_state))
+            true_state[:,8] += G_ACCEL
+
         # create filter results variables
         filter_state = np.zeros((time_steps.shape[0],16))
         filter_cov = np.zeros((time_steps.shape[0],16,16))
@@ -130,7 +137,7 @@ class SimpleNavSim:
             filter_state[i,:] = np.reshape(est,filter_state[i,:].shape)
             filter_cov[i,:,:] = cov
 
-        return filter_state, filter_cov, sensor_measurements
+        return time_steps, true_state, filter_state, filter_cov, sensor_measurements
 
     def plot_results(self,time_steps,true_state,filter_state,filter_cov,sensor_measurements):
         
@@ -343,6 +350,60 @@ class SimpleNavSim:
         plt.xlabel('Time [s]')
         plt.ylabel(r'$q_3$ est error [deg]')
 
+        plt.figure()
+        plt.subplot(311)
+        plt.grid(True)
+        plt.plot(time_steps,filter_state[:,10]-sensor_measurements['IMU'][:,6],'--')
+        plt.plot(time_steps,2*np.sqrt(filter_cov[:,10,10]),'r--')
+        plt.plot(time_steps,-2*np.sqrt(filter_cov[:,10,10]),'r--')
+        plt.fill_between(time_steps,-2*np.sqrt(filter_cov[:,10,10]),2*np.sqrt(filter_cov[:,10,10]),alpha=0.1)
+        plt.title('Accel bias est error')
+        plt.ylabel('X')
+
+        plt.subplot(312)
+        plt.grid(True)
+        plt.plot(time_steps,filter_state[:,11]-sensor_measurements['IMU'][:,7],'--')
+        plt.plot(time_steps,2*np.sqrt(filter_cov[:,11,11]),'r--')
+        plt.plot(time_steps,-2*np.sqrt(filter_cov[:,11,11]),'r--')
+        plt.fill_between(time_steps,-2*np.sqrt(filter_cov[:,11,11]),2*np.sqrt(filter_cov[:,11,11]),alpha=0.1)
+        plt.ylabel('Y')
+
+        plt.subplot(313)
+        plt.grid(True)
+        plt.plot(time_steps,filter_state[:,12]-sensor_measurements['IMU'][:,8],'--')
+        plt.plot(time_steps,2*np.sqrt(filter_cov[:,12,12]),'r--')
+        plt.plot(time_steps,-2*np.sqrt(filter_cov[:,12,12]),'r--')
+        plt.fill_between(time_steps,-2*np.sqrt(filter_cov[:,12,12]),2*np.sqrt(filter_cov[:,12,12]),alpha=0.1)
+        plt.ylabel('Z')
+        plt.xlabel('Time [s]')
+
+        plt.figure()
+        plt.subplot(311)
+        plt.grid(True)
+        plt.plot(time_steps,filter_state[:,13]-sensor_measurements['IMU'][:,9],'--')
+        plt.plot(time_steps,2*np.sqrt(filter_cov[:,13,13]),'r--')
+        plt.plot(time_steps,-2*np.sqrt(filter_cov[:,13,13]),'r--')
+        plt.fill_between(time_steps,-2*np.sqrt(filter_cov[:,13,13]),2*np.sqrt(filter_cov[:,13,13]),alpha=0.1)
+        plt.title('Gyro bias est error')
+        plt.ylabel('X')
+
+        plt.subplot(312)
+        plt.grid(True)
+        plt.plot(time_steps,filter_state[:,14]-sensor_measurements['IMU'][:,10],'--')
+        plt.plot(time_steps,2*np.sqrt(filter_cov[:,14,14]),'r--')
+        plt.plot(time_steps,-2*np.sqrt(filter_cov[:,14,14]),'r--')
+        plt.fill_between(time_steps,-2*np.sqrt(filter_cov[:,14,14]),2*np.sqrt(filter_cov[:,14,14]),alpha=0.1)
+        plt.ylabel('Y')
+
+        plt.subplot(313)
+        plt.grid(True)
+        plt.plot(time_steps,filter_state[:,15]-sensor_measurements['IMU'][:,11],'--')
+        plt.plot(time_steps,2*np.sqrt(filter_cov[:,15,15]),'r--')
+        plt.plot(time_steps,-2*np.sqrt(filter_cov[:,15,15]),'r--')
+        plt.fill_between(time_steps,-2*np.sqrt(filter_cov[:,15,15]),2*np.sqrt(filter_cov[:,15,15]),alpha=0.1)
+        plt.ylabel('Z')
+        plt.xlabel('Time [s]')
+
         plt.show()
 
     def ypr_rotation_b2r(self,roll,pitch,yaw,deg=False):
@@ -492,14 +553,15 @@ def main():
     # create nav filter instance
     # nav_filter = StrapdownINS(sensors={'IMU':imu,'GPS':gps,'Depth':depth,'Compass':compass,'DVL':dvl,'Magnetometer':mag}, dt=0.01)
     # nav_filter = StrapdownINS(sensors={'IMU':imu,'GPS':gps,'Depth':depth,'Compass':compass}, dt=0.01)
-    nav_filter = StrapdownINS(sensors={'IMU':imu, 'GPS':gps}, dt=0.01)
-    # nav_filter = StrapdownINS(sensors={'IMU':imu,'GPS':gps,'Depth':depth,'Compass':compass}, dt=0.01)
-
+    # nav_filter = StrapdownINS(sensors={'IMU':imu, 'GPS':gps}, dt=0.01)
+    # nav_filter = StrapdownINS(sensors={'IMU':imu}, dt=0.01)
+    nav_filter = StrapdownINS(sensors={'IMU':imu,'GPS':gps,'Depth':depth,'Compass':compass}, dt=0.01)
+    # nav_filter = StrapdownINS(sensors={'IMU':imu,'GPS':gps,'Depth':depth,'Magnetometer':mag}, dt=0.01)
     # create sim instance
-    sim = SimpleNavSim(dt=0.01,navfilter=nav_filter,sim_time=[0,50])
+    sim = SimpleNavSim(dt=0.01,navfilter=nav_filter,sim_time=[0,100])
 
     time_steps, true_state = sim.create_sim_data()
-    filter_state, filter_cov, sensor_measurements = sim.run_filter(time_steps,true_state)
+    time_steps, true_state, filter_state, filter_cov, sensor_measurements = sim.run_filter(time_steps,true_state,warm_start=10)
     sim.plot_results(time_steps,true_state,filter_state,filter_cov,sensor_measurements)
 
 if __name__ == '__main__':
