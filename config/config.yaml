@@ -5,15 +5,16 @@ etddf_dt: 0.1
 nav_dt: 0.01
 
 monte_carlo_sims: True
-num_mc_sims: 1
+num_mc_sims: 2
 
-delta_values: [1.5]
-tau_values: [3.0]
+delta_values: [1.0,2.0]
+tau_values: [5.0]
 msg_drop_prob_values: [0.0]
 
 use_adaptive_tau: True
 # fixed_rng: 9320948
-fixed_rng: 127982
+# fixed_rng: 127982
+fixed_rng: False
 
 # data compression techniques
 quantization: False

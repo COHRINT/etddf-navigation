@@ -7,18 +7,18 @@ Data visualization tools for OFFSET
 import os
 import sys
 import pprint
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-import argparse
+from mpl_toolkits.mplot3d import Axes3D
+
 # import pudb; pudb.set_trace()
 
 from etddf_navigation.helpers.data_handling import load_sim_data, load_metadata
 
-# def print_data_usage(path,agent_ids):
-#     """
-#     Print information about data transfer, including covariance intersection triggers and message sending rates.
-#     """
-
+TITLE_SIZE = 16
+LABEL_SIZE = 14
+TICK_SIZE = 12
 
 def mse_plots(path,agent_ids):
     """
@@ -48,7 +48,7 @@ def mse_plots(path,agent_ids):
     #         ['delta05','drop00','tau25'],['delta10','drop00','tau25'],['delta15','drop00','tau25'],['delta20','drop00','tau25'],
     # figs = [['delta05','drop00','tau30'],['delta10','drop00','tau30'],['delta15','drop00','tau30'],['delta20','drop00','tau30']]
     # figs = [['delta15','drop00','tau30']]
-    figs = [['delta15','drop00','tau70']]
+    figs = [['delta10','drop00','tau50'],['delta10','drop00','tau35'],['delta20','drop00','tau50'],['delta20','drop00','tau35']]
 
     # load simulation metadata and get ids of agents to plot
     metadata = load_metadata(path)['cfg']
@@ -84,28 +84,55 @@ def mse_plots(path,agent_ids):
         # create figure for figure parameter set
         plt.figure()
         legend_str = []
+        # create params title
+        delta_str = fig[0].split('delta')[1]
+        if int(delta_str) > 9:
+            delta_str = str(int(delta_str)/10)
+        tau_str = fig[2].split('tau')[1]
+        if int(tau_str) > 9:
+            tau_str = str(int(tau_str)/10)
+        params_str = r'$\delta$=' + delta_str + r', $\tau$=' + tau_str
+
+        # counter for color picking
+        color_cnt = 0
 
         # configure pyplot for using latex
         plt.rc('text', usetex=True)
         plt.rc('font',family='serif')
         plt.grid(True)
-        plt.title(str(fig) + ', Abs. pos. -- ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']))
-        plt.xlabel('Time [s]')
-        plt.ylabel(r'Est error [$m^2$]')
+        plt.title('Position RMSE, ' + params_str + ', GPS agents: ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']),size=TITLE_SIZE)
+        plt.xlabel('Time [s]',size=LABEL_SIZE)
+        plt.ylabel(r'Est error [$m$]',size=LABEL_SIZE)
+
+        for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+            label.set_fontsize(TICK_SIZE)
 
         # for each loaded data file
         for param_data in data:
             # for each agent generate mse plot
+            baseline_mse_data = param_data['results']['nav_baseline_mse']
+            baseline_mse_data_avg = np.mean(baseline_mse_data,axis=1)
+            plt.plot(nav_time_vec[0:-1],np.sqrt(baseline_mse_data_avg),'--',color='C7')
+            legend_str.append('baseline avg')
+
             for id_ in agent_ids:
 
                 # extract agent data to plot
                 mse_data = param_data['results']['etddf_mse'][:,id_]
                 nav_mse_data = param_data['results']['nav_mse'][:,id_]
 
-                plt.plot(time_vec[0:-1],mse_data)
-                plt.plot(nav_time_vec[0:-1],nav_mse_data,'--')
+                etddf_mse_std_data = np.mean(param_data['results']['etddf_mse_std'][:,id_])
+                nav_mse_std_data = np.mean(param_data['results']['nav_mse_std'][:,id_])
+                print('Agent {} RMSE avg std: etdff - {}, nav - {}'.format(id_,np.sqrt(etddf_mse_std_data),np.sqrt(nav_mse_std_data)))
+
+                color_str = 'C'+str(color_cnt%12)
+
+                plt.plot(time_vec[0:-1],np.sqrt(mse_data),color=color_str)
+                plt.plot(nav_time_vec[0:-1],np.sqrt(nav_mse_data),'--',color=color_str)
 
                 # plt.title(r'Agent {} ownship pos MSE: $\delta={}$, $\tau_g={}$, msg drop={}'.format(id_+1,param_data['metadata']['delta_value'],param_data['metadata']['tau_value'],param_data['metadata']['msg_drop_prob_value']))
+
+                color_cnt += 1
 
             # legend_str.append(r'$\delta={}$'.format(param_data['metadata']['delta_value']))
                 legend_str.append('{} etddf'.format(id_))
@@ -118,8 +145,128 @@ def mse_plots(path,agent_ids):
             print('CI triggers: {}'.format(param_data['results']['ci_total']))
             print('CI trigger rate: {}'.format(param_data['results']['ci_rate']))
 
-        plt.legend(legend_str)
-        plt.ylim([-1,100])
+        plt.legend(legend_str,loc='upper left')
+        plt.ylim([-1,40])
+
+    # plt.show()
+
+def rel_mse_plots(path,agent_ids):
+    """
+    Creates mean-squared-error plors for provided agent ids.
+
+    Inputs:
+
+        metadata -- sim run metadata
+        data -- sim results data structure
+        agent_ids -- list of agent ids to plot
+
+    Outputs:
+
+        plots -- matplotlib plot objects
+    """
+    # list of params for figures --> params not specified will have all values plotted
+    # figs = [['delta10','drop00','tau5'],['delta10','drop00','tau7'],['delta20','drop00','tau5'],['delta20','drop00','tau7']]
+    # figs = [['drop00','delta15','tau5'],['drop02','delta20','tau5']]
+    # figs = [['delta10','drop00','tau5'],['delta10','drop00','tau7'],['delta20','drop00','tau5'],['delta20','drop00','tau7']]#,
+    #         ['delta05','drop00','tau5'],['delta05','drop00','tau7'],['delta15','drop00','tau5'],['delta15','drop00','tau7'],
+    #         ['delta05','drop00','tau35'],['delta10','drop00','tau35'],['delta15','drop00','tau35'],['delta20','drop00','tau35']]
+    # figs = [['delta10','drop00','tau0'],['delta10','drop00','tau05'],['delta20','drop00','tau0'],['delta20','drop00','tau05'],
+    #         ['delta05','drop00','tau0'],['delta05','drop00','tau05'],['delta15','drop00','tau0'],['delta15','drop00','tau05'],
+    #         ['delta05','drop00','tau1'],['delta10','drop00','tau1'],['delta15','drop00','tau1'],['delta20','drop00','tau1']]
+    # figs = [['delta05','drop00','tau15'],['delta10','drop00','tau15'],['delta15','drop00','tau15'],['delta20','drop00','tau15']]
+    # figs = [['delta05','drop00','tau20'],['delta10','drop00','tau20'],['delta15','drop00','tau20'],['delta20','drop00','tau20'],
+    #         ['delta05','drop00','tau25'],['delta10','drop00','tau25'],['delta15','drop00','tau25'],['delta20','drop00','tau25'],
+    # figs = [['delta05','drop00','tau30'],['delta10','drop00','tau30'],['delta15','drop00','tau30'],['delta20','drop00','tau30']]
+    # figs = [['delta15','drop00','tau30']]
+    # figs = [['delta15','drop00','tau70']]
+    figs = [['delta10','drop00','tau35'],['delta10','drop00','tau5']]
+
+    # load simulation metadata and get ids of agents to plot
+    metadata = load_metadata(path)['cfg']
+    if len(agent_ids) == 1 and agent_ids[0] == -1:
+        agent_ids = list(range(0,len(metadata['agent_cfg']['conns'])))
+
+    # for each fig to be created, get data
+    for fig in figs:
+
+        # get all sim data files with desired params
+        all_files = os.listdir(path)
+        files_to_load = []
+        for file in all_files:
+            keep_flag = True
+            for param in fig:
+                if param not in file:
+                    keep_flag = False
+            if keep_flag: files_to_load.append(file)
+        
+        data = []
+        for file in files_to_load:
+            data.append(load_sim_data(os.path.join(os.path.abspath(path),file)))
+            
+        # create time vector -- common to all plots
+        time_vec = np.arange(start=0,
+                            stop=metadata['max_time']+metadata['etddf_dt'],
+                            step=metadata['etddf_dt'])
+
+        # create figure for figure parameter set
+        plt.figure()
+        legend_str = []
+        # create params title
+        delta_str = fig[0].split('delta')[1]
+        if int(delta_str) > 9:
+            delta_str = str(int(delta_str)/10)
+        tau_str = fig[2].split('tau')[1]
+        if int(tau_str) > 9:
+            tau_str = str(int(tau_str)/10)
+        params_str = r'$\delta$=' + delta_str + r', $\tau$=' + tau_str
+
+        # color_cnt = 0
+
+        # configure pyplot for using latex
+        plt.rc('text', usetex=True)
+        plt.rc('font',family='serif')
+        plt.grid(True)
+        plt.title('Rel. Position RMSE, ' + params_str + ', GPS agents: ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']),size=TITLE_SIZE)
+        plt.xlabel('Time [s]',size=LABEL_SIZE)
+        plt.ylabel(r'Est error [$m$]',size=LABEL_SIZE)
+
+        for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+            label.set_fontsize(TICK_SIZE)
+
+        # for each loaded data file
+        for param_data in data:
+            # for each agent generate mse plot
+            color_cnt = 0
+            for id_ in agent_ids:
+                # extract agent data to plot
+                rel_mse_data = param_data['results']['etddf_rel_mse'][id_]
+                # baseline_mse_data = param_data['results']['baseline_mse'][:,id_]
+
+                for conn in range(0,rel_mse_data.shape[1]):
+                    color_str = 'C' + str(color_cnt%10)
+
+                    plt.plot(time_vec[0:-1],np.sqrt(rel_mse_data[:,conn]),color=color_str)
+
+                    legend_str.append(r'${}\rightarrow {}$'.format(id_,metadata['agent_cfg']['conns'][id_][conn]))
+                    color_cnt += 1
+
+
+                # plt.plot(time_vec,np.sqrt(baseline_mse_data),'--',color=color_str)
+
+                # plt.title(r'Agent {} ownship pos MSE: $\delta={}$, $\tau_g={}$, msg drop={}'.format(id_+1,param_data['metadata']['delta_value'],param_data['metadata']['tau_value'],param_data['metadata']['msg_drop_prob_value']))
+
+            # legend_str.append(r'$\delta={}$'.format(param_data['metadata']['delta_value']))
+                # legend_str.append('{}'.format(id_))
+
+            print('-----')
+            print(str(fig) + ', Abs. pos. -- ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']))
+            print('Total possible messages to send: {}'.format(param_data['results']['msgs_total']))
+            print('Total messages sent: {}'.format(param_data['results']['msgs_sent']))
+            print('CI triggers: {}'.format(param_data['results']['ci_total']))
+            print('CI trigger rate: {}'.format(param_data['results']['ci_rate']))
+
+        plt.legend(legend_str,loc='upper left')
+        plt.ylim([-1,10])
 
     # plt.show()
 
@@ -151,7 +298,8 @@ def time_trace_plots(path, agent_ids):
     #         ['delta05','drop00','tau25'],['delta10','drop00','tau25'],['delta15','drop00','tau25'],['delta20','drop00','tau25'],
     # figs = [['delta05','drop00','tau30'],['delta10','drop00','tau30'],['delta15','drop00','tau30'],['delta20','drop00','tau30']]
     # figs = [['delta15','drop00','tau30']]
-    figs = [['delta15','drop00','tau70']]
+    # figs = [['delta15','drop00','tau50']]
+    figs = [['delta10','drop00','tau50'],['delta10','drop00','tau35'],['delta20','drop00','tau50'],['delta20','drop00','tau35']]
 
      # load simulation metadata and get ids of agents to plot
     metadata = load_metadata(path)['cfg']
@@ -409,6 +557,135 @@ def time_trace_plots(path, agent_ids):
 
     # plt.show()
 
+def trajectory_plots(path,agent_ids):
+    """
+    Creates plot of vehicle trajectories.
+
+    Inputs:
+
+        metadata -- sim run metadata
+        data -- sim results data structure
+        agent_ids -- list of agent ids to plot
+
+    Outputs:
+
+        plots -- matplotlib plot objects
+    """
+    # list of params for figures --> params not specified will have all values plotted
+    # figs = [['delta10','drop00','tau5'],['delta10','drop00','tau7'],['delta20','drop00','tau5'],['delta20','drop00','tau7']]
+    # figs = [['drop00','delta15','tau5'],['drop02','delta20','tau5']]
+    # figs = [['delta10','drop00','tau5'],['delta10','drop00','tau7'],['delta20','drop00','tau5'],['delta20','drop00','tau7']]#,
+    #         ['delta05','drop00','tau5'],['delta05','drop00','tau7'],['delta15','drop00','tau5'],['delta15','drop00','tau7'],
+    #         ['delta05','drop00','tau35'],['delta10','drop00','tau35'],['delta15','drop00','tau35'],['delta20','drop00','tau35']]
+    # figs = [['delta10','drop00','tau0'],['delta10','drop00','tau05'],['delta20','drop00','tau0'],['delta20','drop00','tau05'],
+    #         ['delta05','drop00','tau0'],['delta05','drop00','tau05'],['delta15','drop00','tau0'],['delta15','drop00','tau05'],
+    #         ['delta05','drop00','tau1'],['delta10','drop00','tau1'],['delta15','drop00','tau1'],['delta20','drop00','tau1']]
+    # figs = [['delta05','drop00','tau15'],['delta10','drop00','tau15'],['delta15','drop00','tau15'],['delta20','drop00','tau15']]
+    # figs = [['delta05','drop00','tau20'],['delta10','drop00','tau20'],['delta15','drop00','tau20'],['delta20','drop00','tau20'],
+    #         ['delta05','drop00','tau25'],['delta10','drop00','tau25'],['delta15','drop00','tau25'],['delta20','drop00','tau25'],
+    # figs = [['delta05','drop00','tau30'],['delta10','drop00','tau30'],['delta15','drop00','tau30'],['delta20','drop00','tau30']]
+    # figs = [['delta15','drop00','tau30']]
+    # figs = [['delta15','drop00','tau70']]
+    figs = [['delta10','drop00','tau50'],['delta20','drop00','tau50']]
+
+    # load simulation metadata and get ids of agents to plot
+    metadata = load_metadata(path)['cfg']
+    if len(agent_ids) == 1 and agent_ids[0] == -1:
+        agent_ids = list(range(0,len(metadata['agent_cfg']['conns'])))
+
+    # plot handles
+    f = [[] for x in range(0,len(figs))]
+
+    plt.rc('text', usetex=True)
+    plt.rc('font',family='serif')
+
+    # for each fig to be created, get data
+    for i,fig in enumerate(figs):
+
+        # get all sim data files with desired params
+        all_files = os.listdir(path)
+        files_to_load = []
+        for file in all_files:
+            keep_flag = True
+            for param in fig:
+                if param not in file:
+                    keep_flag = False
+            if keep_flag: files_to_load.append(file)
+        
+        data = []
+        for file in files_to_load:
+            data.append(load_sim_data(os.path.join(os.path.abspath(path),file)))
+
+        # create time vector -- common to all plots
+        time_vec = np.arange(start=0,
+                            stop=metadata['max_time']+metadata['etddf_dt'],
+                            step=metadata['etddf_dt'])
+
+        # create figure for figure parameter set
+        f[i] = plt.figure()
+        plt.grid(True)
+        ax = f[i].add_subplot(111, projection='3d')
+        legend_str = []
+        # create params title
+        delta_str = fig[0].split('delta')[1]
+        if int(delta_str) > 9:
+            delta_str = str(int(delta_str)/10)
+        tau_str = fig[2].split('tau')[1]
+        if int(tau_str) > 9:
+            tau_str = str(int(tau_str)/10)
+        params_str = r'$\delta$=' + delta_str + r', $\tau$=' + tau_str
+
+        # color_cnt = 0
+
+        # configure pyplot for using latex
+        # plt.rc('text', usetex=True)
+        # plt.rc('font',family='serif')
+        plt.title('Sample trajectories, ' + params_str + ', GPS agents: ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']),size=TITLE_SIZE)
+        # plt.xlabel('Time [s]',size=LABEL_SIZE)
+        # plt.ylabel(r'Est error [$m$]',size=LABEL_SIZE)
+        plt.xlabel(r'N [$m$]',size=LABEL_SIZE)
+        plt.ylabel(r'E [$m$]',size=LABEL_SIZE)
+        ax.set_zlabel(r'D [$m$]',size=LABEL_SIZE)
+
+        for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+            label.set_fontsize(TICK_SIZE)
+
+        # for each loaded data file
+        # for param_data in data:
+        #     # for each agent generate mse plot
+        #     color_cnt = 0
+        #     for id_ in agent_ids:
+        #         # extract agent data to plot
+        #         rel_mse_data = param_data['results']['etddf_rel_mse'][id_]
+
+        print(len(data))
+
+        # for sample trajectory, we just need one plot, and one trajectory from one monte carlo sim
+        for id_ in agent_ids:
+            true_pos = data[0]['results']['nav_true_states'][0][id_]
+            print(true_pos.shape)
+            
+            
+            # ax = Axes3D(fig1)
+            # plt.plot(gt_data[:,0], gt_data[:,1])
+            # ax.plot(gt_data[:,0],gt_data[:,1],gt_data[:,2])
+            # plt.plot(est[:,0],est[:,1])
+            ax.plot(true_pos[0,:-8],true_pos[1,:-8],true_pos[2,:-8])
+            # ax.plot(generated_measurements['GPS'][:,0],generated_measurements['GPS'][:,1],generated_measurements['GPS'][:,2],'x')
+            # plt.title('Ground Truth 3D Position')
+            # plt.xlabel('X Position [m]')
+            # plt.ylabel('Y Position [m]')
+            # ax.set_zlabel('Z Position [m]')
+            # plt.legend(['ground truth','ins estimate','gps measurements'])
+            # ax.set_xlim([-100,100])
+            # ax.set_ylim([-100,100])
+            # ax.set_zlim([-100,100])
+
+            legend_str.append('{} true'.format(id_))
+
+        plt.legend(legend_str,loc='upper left')
+
+
 def quat2euler(quat,deg=False):
     """
     Convert quaternion representation to euler angles.
@@ -517,6 +794,10 @@ if __name__ == "__main__":
                     help='specify file path of sim data')
     parser.add_argument('-d','--dir-path',type=str,dest='dir_path',action='store',
                     help='specify path to sim data directory')
+    parser.add_argument('-r','--rel-mse',dest='rel_mse_flag',action='store_true',
+                    help='plot relative mean-squared-errors (relMSE)')
+    parser.add_argument('-j','--traj',dest='traj_flag',action='store_true',
+                    help='plot vehicle trajectory')
     args = parser.parse_args()
 
     # TODO: add arg for local, common, or both
@@ -543,6 +824,12 @@ if __name__ == "__main__":
 
     if args.mse_flag:
         mse_plots(args.dir_path, agents)
+
+    if args.rel_mse_flag:
+        rel_mse_plots(args.dir_path, agents)
+
+    if args.traj_flag:
+        trajectory_plots(args.dir_path, agents)
 
     plt.show()
     # if args.data_usage:

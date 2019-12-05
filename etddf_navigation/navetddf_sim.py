@@ -87,8 +87,8 @@ class NavSimInstance:
         # data compression flags and object
         self.quantization = quantization_flag
         self.diagonalization = diagonalization_flag
-        if self.quantization:
-            self.quantizer = Quantizer(quantizer_fxn='x2')
+        # if self.quantization:
+        #     self.quantizer = Quantizer(quantizer_fxn='x2')
 
         self.fixed_rng = fixed_rng
         if self.fixed_rng is not False:
@@ -187,6 +187,9 @@ class NavSimInstance:
         # create filter instance
         baseline_filter = KF(F_full,G_full,0,0,Q_full,R_abs,R_rel,x0_full,P0_full,0)
 
+        # add mse history
+        baseline_filter.mse_history = [[] for x in range(0,self.num_agents)]
+
         return baseline_filter
 
     def init_nav_baseline(self,x_true_vec,nav_sensors):
@@ -269,7 +272,7 @@ class NavSimInstance:
             # loop through all connections of each of self's connections
             for ii in self.connections[agent_id]:
                 if ii is not agent_id:
-                    neighbor_agent_id = deepcopy(i)
+                    neighbor_agent_id = deepcopy(ii) # TODO this should be deepcopy(ii)
                     ids_new = sorted(deepcopy(self.connections[neighbor_agent_id]))
                     ids_new.append(neighbor_agent_id)
 
@@ -353,7 +356,7 @@ class NavSimInstance:
             new_agent = Agent(agent_id,connections_new,meas_connections,neighbor_conn_ids,
                                 local_filter,common_estimates,x_true_vec[6*i:6*i+6],
                                 0,len(x0)*self.tau_state_goal,len(x0)*self.tau,
-                                self.use_adaptive_tau)
+                                self.use_adaptive_tau,self.quantization,self.diagonalization)
 
             agents.append(new_agent)
 
@@ -466,13 +469,13 @@ class NavSimInstance:
 
         for i in range(0,self.num_agents):
             # generate vehicle control
-            x_accel = lambda t: 0.1*np.sin(t*3*np.pi/self.max_time) #+ np.random.normal(0,0.01)
+            x_accel = lambda t: 1*np.sin(t*3*np.pi/self.max_time) #+ np.random.normal(0,0.01)
             y_accel = lambda t: 0.0*np.sin(t*3*np.pi/self.max_time) #+ np.random.normal(0,0.01)
             z_accel = lambda t: 0.0*np.sin(t*3*np.pi/self.max_time) #+ np.random.normal(0,0.01)
             # generate yaw rates
             roll_rate = lambda t: 0.0*np.sin(t*2*np.pi/self.max_time) #+ np.random.normal(0,0.01)
             pitch_rate = lambda t: 0.0*np.sin(t*2*np.pi/self.max_time) #+ np.random.normal(0,0.01)
-            yaw_rate = lambda t: 0.01*np.sin(t*2*np.pi/self.max_time) #+ np.random.normal(0,0.01)
+            yaw_rate = lambda t: 0.05*np.cos(t*2*np.pi/self.max_time) #+ np.random.normal(0,0.01)
 
             control_fxns = [x_accel,y_accel,z_accel,roll_rate,pitch_rate,yaw_rate]
 
@@ -500,7 +503,8 @@ class NavSimInstance:
             self.true_states[i,15:18,self.sim_time_step+1] = accel_bias
             self.true_states[i,18:21,self.sim_time_step+1] = gyro_bias
 
-            accel_state = np.array([self.true_states[i,6,self.sim_time_step+1],self.true_states[i,7,self.sim_time_step+1],self.true_states[i,8,self.sim_time_step+1],self.true_states[i,12,self.sim_time_step+1],self.true_states[i,13,self.sim_time_step+1],self.true_states[i,14,self.sim_time_step+1]])
+            # accel_state = np.array([self.true_states[i,6,self.sim_time_step+1],self.true_states[i,7,self.sim_time_step+1],self.true_states[i,8,self.sim_time_step+1],self.true_states[i,12,self.sim_time_step+1],self.true_states[i,13,self.sim_time_step+1],self.true_states[i,14,self.sim_time_step+1]])
+            accel_state = np.array([true_state_wgrav[6],true_state_wgrav[7],true_state_wgrav[8],true_state_wgrav[12],true_state_wgrav[13],true_state_wgrav[14]])
             accel_meas,gyro_meas,_,_,accel_bias,gyro_bias = self.nav_baselines[i].sensors['IMU'].gen_measurement_from_accel(accel_state)
             baseline_imu_meas = np.reshape(np.concatenate((accel_meas,gyro_meas)),(6,))
             
@@ -536,7 +540,7 @@ class NavSimInstance:
                     self.agents[i].nav_filter.update(meas,s_name)
 
             for s_name,s in self.nav_baselines[i].sensors.items():
-                if np.mod(i,(1/(s.rate*self.nav_dt))) == 0 and s_name != 'IMU':
+                if np.mod(self.sim_time_step,(1/(s.rate*self.nav_dt))) == 0 and s_name != 'IMU':
                     meas_state = np.array([self.true_states[i,0,self.sim_time_step+1],
                                             self.true_states[i,1,self.sim_time_step+1],
                                             self.true_states[i,2,self.sim_time_step+1],
@@ -677,7 +681,8 @@ class NavSimInstance:
                 
             #     # check covariance trace for triggering CI
                 agent.ci_trigger_rate = agent.ci_trigger_cnt / ((self.sim_time_step*(self.nav_dt/self.etddf_dt))-1)
-                if np.trace(agent.local_filter.P) > agent.tau:
+                if np.trace(agent.local_filter.P) > agent.tau and agent.ci_trigger_rate < 0.2:
+                # if self.sim_time_step*(self.nav_dt/self.etddf_dt) % 5 == 0:
                     agent.ci_trigger_cnt += 1
                     # agent.ci_trigger_rate = agent.ci_trigger_cnt / ((self.sim_time_step*(self.nav_dt/self.etddf_dt))-1)
 
@@ -687,72 +692,72 @@ class NavSimInstance:
                         msg_a = agent.gen_ci_message(conn_id,list(self.agents[conn_id].connections))
                         msg_b = self.agents[conn_id].gen_ci_message(agent.agent_id,list(agent.connections))
 
-                        # compress state messages
-                        if self.quantization and self.diagonalization:
+                        # # compress state messages
+                        # if self.quantization and self.diagonalization:
 
-                            # create element types list: assumes position, velocity alternating structure
-                            element_types = []
-                            for el_idx in range(0,msg_a.est_cov.shape[0]):
-                                if el_idx % 2 == 0: element_types.append('position')
-                                else: element_types.append('velocity')
+                        #     # create element types list: assumes position, velocity alternating structure
+                        #     element_types = []
+                        #     for el_idx in range(0,msg_a.est_cov.shape[0]):
+                        #         if el_idx % 2 == 0: element_types.append('position')
+                        #         else: element_types.append('velocity')
 
-                            # first diagonalize
-                            cova_diag = covar_diagonalize(msg_a.est_cov)
-                            covb_diag = covar_diagonalize(msg_b.est_cov)
+                        #     # first diagonalize
+                        #     cova_diag = covar_diagonalize(msg_a.est_cov)
+                        #     covb_diag = covar_diagonalize(msg_b.est_cov)
 
-                            # then quantize
-                            bits_a = self.quantizer.state2quant(msg_a.state_est, cova_diag, element_types, diag_only=True)
-                            bits_b = self.quantizer.state2quant(msg_b.state_est, covb_diag, element_types, diag_only=True)
+                        #     # then quantize
+                        #     bits_a = self.quantizer.state2quant(msg_a.state_est, cova_diag, element_types, diag_only=True)
+                        #     bits_b = self.quantizer.state2quant(msg_b.state_est, covb_diag, element_types, diag_only=True)
 
-                            # then decompress
-                            meana_quant, cova_quant = self.quantizer.quant2state(bits_a[0], 2*cova_diag.shape[0], element_types, diag_only=True)
-                            meanb_quant, covb_quant = self.quantizer.quant2state(bits_b[0], 2*covb_diag.shape[0], element_types, diag_only=True)
+                        #     # then decompress
+                        #     meana_quant, cova_quant = self.quantizer.quant2state(bits_a[0], 2*cova_diag.shape[0], element_types, diag_only=True)
+                        #     meanb_quant, covb_quant = self.quantizer.quant2state(bits_b[0], 2*covb_diag.shape[0], element_types, diag_only=True)
 
-                            assert(cova_quant.shape == msg_a.est_cov.shape)
+                        #     assert(cova_quant.shape == msg_a.est_cov.shape)
 
-                            # add back to state messages
-                            meana_quant = np.reshape(meana_quant,msg_a.state_est.shape)
-                            msg_a.state_est = meana_quant
-                            msg_a.est_cov = cova_quant
-                            meanb_quant = np.reshape(meanb_quant,msg_b.state_est.shape)
-                            msg_b.state_est = meanb_quant
-                            msg_b.est_cov = covb_quant
+                        #     # add back to state messages
+                        #     meana_quant = np.reshape(meana_quant,msg_a.state_est.shape)
+                        #     msg_a.state_est = meana_quant
+                        #     msg_a.est_cov = cova_quant
+                        #     meanb_quant = np.reshape(meanb_quant,msg_b.state_est.shape)
+                        #     msg_b.state_est = meanb_quant
+                        #     msg_b.est_cov = covb_quant
 
-                        elif self.quantization:
+                        # elif self.quantization:
 
-                            # create element types list: assumes position, velocity alternating structure
-                            element_types = []
-                            for el_idx in range(0,msg_a.est_cov.shape[0]):
-                                if el_idx % 2 == 0: element_types.append('position')
-                                else: element_types.append('velocity')
+                        #     # create element types list: assumes position, velocity alternating structure
+                        #     element_types = []
+                        #     for el_idx in range(0,msg_a.est_cov.shape[0]):
+                        #         if el_idx % 2 == 0: element_types.append('position')
+                        #         else: element_types.append('velocity')
 
-                            # quantize
-                            bits_a = self.quantizer.state2quant(msg_a.state_est, msg_a.est_cov, element_types)
-                            bits_b = self.quantizer.state2quant(msg_b.state_est, msg_b.est_cov, element_types)
+                        #     # quantize
+                        #     bits_a = self.quantizer.state2quant(msg_a.state_est, msg_a.est_cov, element_types)
+                        #     bits_b = self.quantizer.state2quant(msg_b.state_est, msg_b.est_cov, element_types)
 
-                            # then decompress
-                            meana_quant, cova_quant = self.quantizer.quant2state(bits_a[0], int(msg_a.est_cov.shape[0] + (msg_a.est_cov.shape[0]**2 + msg_a.est_cov.shape[0])/2), element_types)
-                            meanb_quant, covb_quant = self.quantizer.quant2state(bits_b[0], int(msg_b.est_cov.shape[0] + (msg_b.est_cov.shape[0]**2 + msg_b.est_cov.shape[0])/2), element_types)
+                        #     # then decompress
+                        #     meana_quant, cova_quant = self.quantizer.quant2state(bits_a[0], int(msg_a.est_cov.shape[0] + (msg_a.est_cov.shape[0]**2 + msg_a.est_cov.shape[0])/2), element_types)
+                        #     meanb_quant, covb_quant = self.quantizer.quant2state(bits_b[0], int(msg_b.est_cov.shape[0] + (msg_b.est_cov.shape[0]**2 + msg_b.est_cov.shape[0])/2), element_types)
 
-                            # add back to state messages
-                            meana_quant = np.reshape(meana_quant,msg_a.state_est.shape)
-                            msg_a.state_est = meana_quant
-                            msg_a.est_cov = cova_quant
-                            meanb_quant = np.reshape(meanb_quant,msg_b.state_est.shape)
-                            msg_b.state_est = meanb_quant
-                            msg_b.est_cov = covb_quant
+                        #     # add back to state messages
+                        #     meana_quant = np.reshape(meana_quant,msg_a.state_est.shape)
+                        #     msg_a.state_est = meana_quant
+                        #     msg_a.est_cov = cova_quant
+                        #     meanb_quant = np.reshape(meanb_quant,msg_b.state_est.shape)
+                        #     msg_b.state_est = meanb_quant
+                        #     msg_b.est_cov = covb_quant
 
-                        elif self.diagonalization:
-                            # diagonalize
-                            cova_diag = covar_diagonalize(msg_a.est_cov)
-                            covb_diag = covar_diagonalize(msg_b.est_cov)
+                        # elif self.diagonalization:
+                        #     # diagonalize
+                        #     cova_diag = covar_diagonalize(msg_a.est_cov)
+                        #     covb_diag = covar_diagonalize(msg_b.est_cov)
 
-                            msg_a.est_cov = cova_diag
-                            msg_b.est_cov = covb_diag
+                        #     msg_a.est_cov = cova_diag
+                        #     msg_b.est_cov = covb_diag
 
                         # add messages to ci inbox
                         ci_inbox[conn_id].append(deepcopy(msg_a))
-                        ci_inbox[agent.agent_id].append(msg_b)
+                        ci_inbox[agent.agent_id].append(deepcopy(msg_b))
 
             # # process inbox messages
             for j, msg_list in enumerate(ci_inbox):
@@ -864,6 +869,17 @@ class NavSimInstance:
                 agent_mse = np.linalg.norm(np.take(agent.local_filter.x,[idx[0],idx[2],idx[4]]) - np.take(agent.true_state[-1],[0,2,4]),ord=2)**2 
                 agent.mse_history.append(agent_mse)
 
+                # relative position mse
+                for k in range(0,len(agent.meas_connections)):
+                    # get est location
+                    _,rel_idx = agent.get_location(agent.meas_connections[k])
+                    agent_rel_mse = np.linalg.norm( (np.take(agent.local_filter.x,[idx[0],idx[2],idx[4]]) - np.take(agent.local_filter.x,[rel_idx[0],rel_idx[2],rel_idx[4]])) - \
+                                    (np.take(agent.true_state[-1],[0,2,4]) - np.take(self.agents[agent.meas_connections[k]].true_state[-1],[0,2,4])),ord=2)**2
+                    agent.rel_mse_history[k].append(agent_rel_mse)
+
+                baseline_agent_mse = np.linalg.norm(np.take(self.baseline_filter.x,[j*6,(j*6)+2,(j*6)+4]) - np.take(agent.true_state[-1],[0,2,4]),ord=2)**2 
+                self.baseline_filter.mse_history[j].append(baseline_agent_mse)
+
             # update baseline est and cov histories
             self.baseline_filter.state_history.append(deepcopy(self.baseline_filter.x))
             self.baseline_filter.cov_history.append(deepcopy(self.baseline_filter.P))
@@ -879,6 +895,12 @@ class NavSimInstance:
                 agent.nav_mse_history.append(nav_agent_mse)
             except AttributeError:
                 agent.nav_mse_history = [nav_agent_mse]
+
+            nav_baseline_agent_mse = np.linalg.norm(self.nav_baselines[j].x[0:3] - np.take(agent.true_state[-1],[0,2,4]),ord=2)**2
+            try:
+                self.nav_baselines[j].mse_history.append(nav_baseline_agent_mse)
+            except AttributeError:
+                self.nav_baselines[j].mse_history = [nav_baseline_agent_mse]
 
     def run_sim(self,print_strs=None):
         """
@@ -912,7 +934,9 @@ class NavSimInstance:
 
         # create empty numpy arrays to store results -> rows=time, columns=agents
         mse_results_array = np.empty((int(self.max_time/(self.etddf_dt))+1,self.num_agents))
+        rel_mse_array = [np.empty((int(self.max_time/(self.etddf_dt))+1,len(agent.meas_connections))) for i,agent in enumerate(self.agents)]
         local_filter_history = np.empty(())
+        baseline_mse_array = np.empty((int(self.max_time/(self.etddf_dt))+1,self.num_agents))
 
         baseline_state_history = np.array(self.baseline_filter.state_history)
         baseline_cov_history = np.array(self.baseline_filter.cov_history)
@@ -920,6 +944,7 @@ class NavSimInstance:
         # nav filter results
         nav_mse_results_array = np.empty((self.sim_time_step,self.num_agents))
         local_filter_history = np.empty(())
+        nav_baseline_mse_array = np.empty((self.sim_time_step,self.num_agents))
 
         nav_baseline_state_history = np.array(self.baseline_filter.state_history)
         nav_baseline_cov_history = np.array(self.baseline_filter.cov_history)
@@ -948,12 +973,18 @@ class NavSimInstance:
         for i,a in enumerate(self.agents):
             # populate metrics for etddf
             mse_results_array[:,i] = np.array(a.mse_history)
+            baseline_mse_array[:,i] = np.array(self.baseline_filter.mse_history[i])
             # metrics for nav
             nav_mse_results_array[:,i] = np.squeeze(np.array(a.nav_mse_history))
+            nav_baseline_mse_array[:,i] = np.array(self.nav_baselines[i].mse_history)
 
             agent_state_histories.append(np.array(a.local_filter.state_history))
             agent_cov_histories.append(np.array(a.local_filter.cov_history))
             agent_true_states.append(np.array(a.true_state))
+
+            # relative mse
+            for j,conn in enumerate(a.meas_connections):
+                rel_mse_array[i][:,j] = np.array(a.rel_mse_history[j])
         
             state_error = []
             cov_error = []
@@ -1006,11 +1037,13 @@ class NavSimInstance:
         # res = package_results()
         # results_dict = {'baseline': self.baseline_filter, 'agents': self.agents}
         results_dict = {'etddf_agent_mse': mse_results_array,
+                        'etddf_agent_rel_mse': rel_mse_array,
                         'etddf_agent_state_histories': agent_state_histories,
                         'etddf_agent_cov_histories': agent_cov_histories,
                         'etddf_agent_true_states': agent_true_states,
                         'etddf_agent_state_error': agent_state_error,
                         'etddf_agent_cov_error': agent_cov_error,
+                        'etddf_baseline_mse': baseline_mse_array,
                         'etddf_baseline_state_history': baseline_state_history,
                         'etddf_baseline_cov_history': baseline_cov_history,
                         # 'baseline_state_error': baseline_state_error,
@@ -1023,6 +1056,7 @@ class NavSimInstance:
                         'nav_agent_cov_histories': nav_agent_cov_histories,
                         'nav_agent_true_states': nav_agent_true_states,
                         'nav_agent_state_error': nav_agent_state_error,
+                        'nav_baseline_mse': nav_baseline_mse_array,
                         'nav_baseline_state_history': nav_baseline_state_history,
                         'nav_baseline_cov_history': nav_baseline_cov_history}
                         
@@ -1254,8 +1288,8 @@ def main(plot=False,cfg_path=None,save_path=None):
 
                 # numpy array for monte carlo averaged results for etddf filters
                 etddf_mc_mse_results = np.empty((int(cfg['max_time']/cfg['etddf_dt'] + 1),len(cfg['agent_cfg']['conns']),num_mc_sim))
-                # mc_time_trace_results = np.empty((int(cfg['max_time']/cfg['dt'] + 1),len(cfg['agent_cfg']['conns']),num_mc_sim))
-                # mc_baseline_results = np.empty((int(cfg['max_time']/cfg['dt'] + 1),len(cfg['agent_cfg']['conns']),num_mc_sim))
+                etddf_mc_baseline_mse_results = np.empty((int(cfg['max_time']/cfg['etddf_dt'] + 1),len(cfg['agent_cfg']['conns']),num_mc_sim))
+                etddf_mc_rel_mse_results = [np.empty((int(cfg['max_time']/cfg['etddf_dt'] + 1),len(cfg['agent_cfg']['conns'][x]),num_mc_sim)) for x in range(0,len(cfg['agent_cfg']['conns']))]
                 etddf_state_results = []
                 etddf_cov_results = []
                 etddf_baseline_results = []
@@ -1265,6 +1299,7 @@ def main(plot=False,cfg_path=None,save_path=None):
 
                 # monte carlo averaged nav filter results
                 nav_mc_mse_results = np.empty((int(cfg['max_time']/cfg['nav_dt'] + 1),len(cfg['agent_cfg']['conns']),num_mc_sim))
+                nav_mc_baseline_mse_results = np.empty((int(cfg['max_time']/cfg['nav_dt'] + 1),len(cfg['agent_cfg']['conns']),num_mc_sim))
                 nav_state_results = []
                 nav_cov_results = []
                 nav_baseline_results = []
@@ -1302,13 +1337,21 @@ def main(plot=False,cfg_path=None,save_path=None):
                     # add results to results container
                     # results.append(res)
                     etddf_mc_mse_results[:,:,m-1] = res['results']['etddf_agent_mse']
+                    etddf_mc_baseline_mse_results[:,:,m-1] = res['results']['etddf_baseline_mse']
                     nav_mc_mse_results[:,:,m-1] = res['results']['nav_agent_mse']
+                    nav_mc_baseline_mse_results[:,:,m-1] = res['results']['nav_baseline_mse']
+
+                    for ii in range(0,len(cfg['agent_cfg']['conns'])):
+                        etddf_mc_rel_mse_results[ii][:,:,m-1] = res['results']['etddf_agent_rel_mse'][ii]
 
                     etddf_state_error.append(res['results']['etddf_agent_state_error'])
                     etddf_cov_results.append(res['results']['etddf_agent_cov_histories'])
                     etddf_cov_error.append(res['results']['etddf_agent_cov_error'])
                     nav_state_error.append(res['results']['nav_agent_state_error'])
                     nav_cov_results.append(res['results']['nav_agent_cov_histories'])
+
+                    etddf_true_states.append(res['results']['etddf_agent_true_states'])
+                    nav_true_states.append(res['results']['nav_agent_true_states'])
 
                     mc_msgs_total[:,m-1] = res['results']['agent_msgs_total']
                     mc_msgs_sent[:,m-1] = res['results']['agent_msgs_sent']
@@ -1318,7 +1361,16 @@ def main(plot=False,cfg_path=None,save_path=None):
                     sim_cnt += 1
 
                 etddf_mc_avg_mse_results = np.mean(etddf_mc_mse_results,axis=2)
+                etddf_mc_std_mse_results = np.std(etddf_mc_mse_results,axis=2)
+                etddf_mc_avg_baseline_mse_results = np.mean(etddf_mc_baseline_mse_results,axis=2)
+                etddf_mc_std_baseline_mse_results = np.std(etddf_mc_baseline_mse_results,axis=2)
+                etddf_mc_avg_rel_mse_results = [np.mean(etddf_mc_rel_mse_results[x],axis=2) for x in range(0,len(etddf_mc_rel_mse_results))]
+                etddf_mc_std_rel_mse_results = [np.std(etddf_mc_rel_mse_results[x],axis=2) for x in range(0,len(etddf_mc_rel_mse_results))]
+
                 nav_mc_avg_mse_results = np.mean(nav_mc_mse_results,axis=2)
+                nav_mc_std_mse_results = np.std(nav_mc_mse_results,axis=2)
+                nav_mc_avg_baseline_mse_results = np.mean(nav_mc_baseline_mse_results,axis=2)
+                nav_mc_std_baseline_mse_results = np.std(nav_mc_baseline_mse_results,axis=2)
 
                 # compute monte carlo sim averaged state error and covariance for ettdf instances
                 etddf_state_error_mc_avg = [etddf_state_error[0][x] for x in range(0,len(etddf_state_error[0]))]
@@ -1345,28 +1397,43 @@ def main(plot=False,cfg_path=None,save_path=None):
                 nav_state_error_mc_avg = [nav_state_error_mc_avg[x]/num_mc_sim for x in range(0,len(nav_state_error_mc_avg))]
                 nav_cov_histories_mc_avg = [nav_cov_histories_mc_avg[x]/num_mc_sim for x in range(0,len(nav_cov_histories_mc_avg))]
 
-
                 mc_avg_msgs_total = np.mean(mc_msgs_total,axis=1)
                 mc_avg_msgs_sent = np.mean(mc_msgs_sent,axis=1)
                 mc_avg_ci_total = np.mean(mc_ci_total,axis=1)
                 mc_avg_ci_rate = np.mean(mc_ci_rate,axis=1)
 
+                mc_std_msgs_total = np.std(mc_msgs_total,axis=1)
+                mc_std_msgs_sent = np.std(mc_msgs_sent,axis=1)
+                mc_std_ci_total = np.std(mc_ci_total,axis=1)
+                mc_std_ci_rate = np.std(mc_ci_rate,axis=1)
+
                 results = {'etddf_mse': etddf_mc_avg_mse_results,
-                            # 'etddf_state_history': etddf_mc_avg_state,
-                            # 'etddf_cov_history': etddf_mc_avg_cov, 
+                            'etddf_rel_mse': etddf_mc_avg_rel_mse_results,
+                            'etddf_baseline_mse': etddf_mc_avg_baseline_mse_results,
                             'etddf_state_error': etddf_state_error_mc_avg,
                             'etddf_cov_error': etddf_cov_error_mc_avg,
                             'etddf_state_history': etddf_state_results,
                             'etddf_cov_history': etddf_cov_histories_mc_avg,
+                            'etddf_true_states': etddf_true_states,
                             'nav_mse': nav_mc_avg_mse_results,
-                            # 'nav_state_history': nav_mc_avg_state,
+                            'nav_baseline_mse': nav_mc_avg_baseline_mse_results,
                             'nav_state_error': nav_state_error_mc_avg,
                             'nav_state_history': nav_state_results,
                             'nav_cov_history': nav_cov_histories_mc_avg,
+                            'nav_true_states': nav_true_states,
                             'msgs_total': mc_avg_msgs_total,
                             'msgs_sent': mc_avg_msgs_sent,
                             'ci_total': mc_avg_ci_total,
-                            'ci_rate': mc_avg_ci_rate}
+                            'ci_rate': mc_avg_ci_rate,
+                            'etddf_mse_std': etddf_mc_std_mse_results,
+                            'etddf_rel_mse_std': etddf_mc_std_rel_mse_results,
+                            'etddf_baseline_mse_std': etddf_mc_std_baseline_mse_results,
+                            'nav_mse_std': nav_mc_std_mse_results,
+                            'nav_mse_baseline_std': nav_mc_std_baseline_mse_results,
+                            'msgs_total_std': mc_std_msgs_total,
+                            'msgs_sent_std': mc_std_msgs_sent,
+                            'ci_total_std': mc_std_ci_total,
+                            'ci_rate_std': mc_std_ci_rate}
 
                 # create metadata dictionary
                 metadata_dict = {'num_mc_sim': num_mc_sim,
