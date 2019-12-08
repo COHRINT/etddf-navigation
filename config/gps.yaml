@@ -1,5 +1,5 @@
 # GPS sensor configuration file
 
-noise: [[3.0,0,0],[0,3.0,0],[0,0,3.0]]
+noise: [[1.0,0,0],[0,1.0,0],[0,0,1.0]]
 error_models: None
 rate: 10 # Hz

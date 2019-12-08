@@ -145,9 +145,10 @@ class NavSimInstance:
         x_true_vec_nav = np.zeros((self.num_agents,16))
         for i in range(0,self.num_agents):
             # etddf initial states
-            start_noise = np.random.normal([0,0,0,0,0,0],[5,0.5,5,0.5,5,0.5])
+            start_noise = np.random.normal([0,0,0,0,0,0],[5,0.5,5,0.2,5,0.2])
+            # start_noise[1] = 0; start_noise[3] = 0; start_noise[5] = 0
             # start_noise = self.x_start_data[0,i]
-            x_true_etddf = np.array(((i+1)*10,0,(i+1)*10,0,5,0)).T + start_noise
+            x_true_etddf = np.array(((i+1)*30,0,(i+1)*30,0,5,0)).T + start_noise
             x_true_vec_etddf[6*i:6*i+6] = x_true_etddf
 
             # nav filter initial states, uses etddf position and velocity
@@ -469,13 +470,13 @@ class NavSimInstance:
 
         for i in range(0,self.num_agents):
             # generate vehicle control
-            x_accel = lambda t: 1*np.sin(t*3*np.pi/self.max_time) #+ np.random.normal(0,0.01)
+            x_accel = lambda t: 1.0*np.sin(t*np.pi/self.max_time) #+ np.random.normal(0,0.01)
             y_accel = lambda t: 0.0*np.sin(t*3*np.pi/self.max_time) #+ np.random.normal(0,0.01)
             z_accel = lambda t: 0.0*np.sin(t*3*np.pi/self.max_time) #+ np.random.normal(0,0.01)
             # generate yaw rates
             roll_rate = lambda t: 0.0*np.sin(t*2*np.pi/self.max_time) #+ np.random.normal(0,0.01)
             pitch_rate = lambda t: 0.0*np.sin(t*2*np.pi/self.max_time) #+ np.random.normal(0,0.01)
-            yaw_rate = lambda t: 0.05*np.cos(t*2*np.pi/self.max_time) #+ np.random.normal(0,0.01)
+            yaw_rate = lambda t: 0.4#*np.sin(t*4*np.pi/self.max_time) #+ np.random.normal(0,0.01)
 
             control_fxns = [x_accel,y_accel,z_accel,roll_rate,pitch_rate,yaw_rate]
 
@@ -902,7 +903,7 @@ class NavSimInstance:
             except AttributeError:
                 self.nav_baselines[j].mse_history = [nav_baseline_agent_mse]
 
-    def run_sim(self,print_strs=None):
+    def run_sim(self,print_strs=None,print_status=False):
         """
         Run simulation with sim instance parameters, and package results data.
         Called externally after initialization of sim instance.
@@ -923,7 +924,9 @@ class NavSimInstance:
             sim_time_str = 'Sim time: {} of {} sec, {}% complete'.format(
                 self.sim_time,self.max_time,100*(self.sim_time/self.max_time))
             print_strs[3] = sim_time_str
-            self.print_status(print_strs)
+
+            if self.sim_time_step % 10 == 0 and print_status:
+                self.print_status(print_strs)
 
             # update agents
             self.update(self.nav_sensors,self.etddf_sensors,self.etddf_dynamics)
@@ -1240,7 +1243,7 @@ Q_local_true = np.array( ((0.0003,0.005,0,0,0,0),
 
 # main driver function
 
-def main(plot=False,cfg_path=None,save_path=None):
+def main(plot=False,cfg_path=None,save_path=None,print_status=False):
     """
     Main driver function. Called when running sim.py directly or as a module.
 
@@ -1333,7 +1336,7 @@ def main(plot=False,cfg_path=None,save_path=None):
                                         quantization_flag=cfg['quantization'],
                                         diagonalization_flag=cfg['diagonalization'])
                     # run simulation
-                    res = sim.run_sim([sim_print_str,param_print_str,mc_print_str])
+                    res = sim.run_sim([sim_print_str,param_print_str,mc_print_str],print_status)
                     # add results to results container
                     # results.append(res)
                     etddf_mc_mse_results[:,:,m-1] = res['results']['etddf_agent_mse']
@@ -1460,7 +1463,9 @@ if __name__ == "__main__":
                             help='specify the (full) path to a sim config file.')
     parser.add_argument('-s','--save-path', dest='save_path',action='store',
                             help='specify the (full) path to the location where sim data will be saved.')
+    parser.add_argument('-t','--print-status',dest='print_flag',action='store_true',
+                            help='print simulation status to the terminal')
     args = parser.parse_args()
 
     # run the sim driver with command line args
-    main(plot=args.plot_flag,cfg_path=args.config_path,save_path=args.save_path)
+    main(plot=args.plot_flag,cfg_path=args.config_path,save_path=args.save_path,print_status=args.print_flag)

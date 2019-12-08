@@ -48,7 +48,10 @@ def mse_plots(path,agent_ids):
     #         ['delta05','drop00','tau25'],['delta10','drop00','tau25'],['delta15','drop00','tau25'],['delta20','drop00','tau25'],
     # figs = [['delta05','drop00','tau30'],['delta10','drop00','tau30'],['delta15','drop00','tau30'],['delta20','drop00','tau30']]
     # figs = [['delta15','drop00','tau30']]
-    figs = [['delta10','drop00','tau50'],['delta10','drop00','tau35'],['delta20','drop00','tau50'],['delta20','drop00','tau35']]
+    figs = [['delta10','drop00','tau35'],['delta10','drop00','tau50'],['delta10','drop00','tau70'],
+            ['delta15','drop00','tau35'],['delta15','drop00','tau50'],['delta15','drop00','tau70'],
+            ['delta20','drop00','tau35'],['delta20','drop00','tau50'],['delta20','drop00','tau70'],
+            ['delta25','drop00','tau35'],['delta25','drop00','tau50'],['delta25','drop00','tau70']]
 
     # load simulation metadata and get ids of agents to plot
     metadata = load_metadata(path)['cfg']
@@ -179,7 +182,10 @@ def rel_mse_plots(path,agent_ids):
     # figs = [['delta05','drop00','tau30'],['delta10','drop00','tau30'],['delta15','drop00','tau30'],['delta20','drop00','tau30']]
     # figs = [['delta15','drop00','tau30']]
     # figs = [['delta15','drop00','tau70']]
-    figs = [['delta10','drop00','tau35'],['delta10','drop00','tau5']]
+    figs = [['delta10','drop00','tau35'],['delta10','drop00','tau50'],['delta10','drop00','tau70'],
+            ['delta15','drop00','tau35'],['delta15','drop00','tau50'],['delta15','drop00','tau70'],
+            ['delta20','drop00','tau35'],['delta20','drop00','tau50'],['delta20','drop00','tau70'],
+            ['delta25','drop00','tau35'],['delta25','drop00','tau50'],['delta25','drop00','tau70']]
 
     # load simulation metadata and get ids of agents to plot
     metadata = load_metadata(path)['cfg']
@@ -299,7 +305,13 @@ def time_trace_plots(path, agent_ids):
     # figs = [['delta05','drop00','tau30'],['delta10','drop00','tau30'],['delta15','drop00','tau30'],['delta20','drop00','tau30']]
     # figs = [['delta15','drop00','tau30']]
     # figs = [['delta15','drop00','tau50']]
-    figs = [['delta10','drop00','tau50'],['delta10','drop00','tau35'],['delta20','drop00','tau50'],['delta20','drop00','tau35']]
+    # figs = [['delta10','drop00','tau50'],['delta10','drop00','tau35'],['delta20','drop00','tau50'],['delta20','drop00','tau35']]
+    # figs = [['delta10','drop00','tau35'],['delta10','drop00','tau50'],['delta10','drop00','tau70'],
+    #         ['delta15','drop00','tau35'],['delta15','drop00','tau50'],['delta15','drop00','tau70'],
+    #         ['delta20','drop00','tau35'],['delta20','drop00','tau50'],['delta20','drop00','tau70'],
+    #         ['delta25','drop00','tau35'],['delta25','drop00','tau50'],['delta25','drop00','tau70']]
+    # figs = [['delta10','drop00','tau35'],['delta25','drop00','tau70']]
+    figs = [['delta10','drop00','tau50'],['delta20','drop00','tau50']]
 
      # load simulation metadata and get ids of agents to plot
     metadata = load_metadata(path)['cfg']
@@ -336,6 +348,14 @@ def time_trace_plots(path, agent_ids):
         # create figure for figure parameter set
         # plt.figure()
         legend_str = []
+        # create params title
+        delta_str = fig[0].split('delta')[1]
+        if int(delta_str) > 9:
+            delta_str = str(int(delta_str)/10)
+        tau_str = fig[2].split('tau')[1]
+        if int(tau_str) > 9:
+            tau_str = str(int(tau_str)/10)
+        params_str = r'$\delta$=' + delta_str + r', $\tau$=' + tau_str
 
         # configure pyplot for using latex
         plt.rc('text', usetex=True)
@@ -367,92 +387,119 @@ def time_trace_plots(path, agent_ids):
                 # Position estimate error
                 plt.figure()
                 plt.subplot(311)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
+                plt.ylim([-7,7])
                 plt.plot(time_vec[:-1],etddf_state_error[id_][:,0],'C0')
                 plt.fill_between(time_vec[:-1],-2*np.sqrt(etddf_cov_history[id_][:,0,0]),2*np.sqrt(etddf_cov_history[id_][:,0,0]),alpha=0.1,color='C0')
                 plt.plot(nav_time_vec,nav_state_error[id_][:,0],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,0,0]),2*np.sqrt(nav_cov_history[id_][:,0,0]),alpha=0.1,color='C3')
                 plt.legend(['etddf',r'etddf $\pm 2 \sigma$','nav',r'nav $\pm 2 \sigma$'])
-                plt.ylabel(r'Est error N [$m$]')
-                plt.title('Agent ' + str(id_) + ', ' + str(fig) + ', Abs. pos. -- ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Position error')
+                plt.ylabel(r'$\eta$ [$m$]',size=LABEL_SIZE)
+                plt.title('Agent ' + str(id_) + ', ' + params_str + ', GPS agents: ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Position error',size=TITLE_SIZE)
 
                 plt.subplot(312)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
+                plt.ylim([-7,7])
                 plt.plot(time_vec[:-1],etddf_state_error[id_][:,2])
                 plt.fill_between(time_vec[:-1],-2*np.sqrt(etddf_cov_history[id_][:,2,2]),2*np.sqrt(etddf_cov_history[id_][:,2,2]),alpha=0.1,color='C0')
                 plt.plot(nav_time_vec,nav_state_error[id_][:,1],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,1,1]),2*np.sqrt(nav_cov_history[id_][:,1,1]),alpha=0.1,color='C3')
                 # plt.legend(['etddf',r'etddf $\pm 2 \sigma$','nav',r'nav $\pm 2 \sigma$'])
-                plt.ylabel(r'Est error E [$m$]')
+                plt.ylabel(r'$\xi$ [$m$]',size=LABEL_SIZE)
 
                 plt.subplot(313)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
+                plt.ylim([-7,7])
                 plt.plot(time_vec[:-1],etddf_state_error[id_][:,4])
                 plt.fill_between(time_vec[:-1],-2*np.sqrt(etddf_cov_history[id_][:,4,4]),2*np.sqrt(etddf_cov_history[id_][:,4,4]),alpha=0.1,color='C0')
                 plt.plot(nav_time_vec,nav_state_error[id_][:,2],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,2,2]),2*np.sqrt(nav_cov_history[id_][:,2,2]),alpha=0.1,color='C3')
                 # plt.legend(['etddf',r'etddf $\pm 2 \sigma$','nav',r'nav $\pm 2 \sigma$'])
-                plt.xlabel('Time [s]')
-                plt.ylabel(r'Est error D[$m$]')
+                plt.xlabel('Time [s]',size=LABEL_SIZE)
+                plt.ylabel(r'$d$ [$m$]',size=LABEL_SIZE)
 
                 # Velocity estimate error
                 plt.figure()
                 plt.subplot(311)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
+                plt.ylim([-7,7])
                 plt.plot(time_vec[:-1],etddf_state_error[id_][:,1],'C0')
                 plt.fill_between(time_vec[:-1],-2*np.sqrt(etddf_cov_history[id_][:,1,1]),2*np.sqrt(etddf_cov_history[id_][:,1,1]),alpha=0.1,color='C0')
                 plt.plot(nav_time_vec,nav_state_error[id_][:,3],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,3,3]),2*np.sqrt(nav_cov_history[id_][:,3,3]),alpha=0.1,color='C3')
                 plt.legend(['etddf',r'etddf $\pm 2 \sigma$','nav',r'nav $\pm 2 \sigma$'])
-                plt.ylabel(r'Est error N [$m/s$]')
-                plt.title('Agent ' + str(id_) + ', ' + str(fig) + ', Abs. pos. -- ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Velocity error')
+                plt.ylabel(r'$\eta$ [$m/s$]',size=LABEL_SIZE)
+                plt.title('Agent ' + str(id_) + ', ' + params_str + ', GPS agents: ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Velocity error',size=TITLE_SIZE)
 
                 plt.subplot(312)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
+                plt.ylim([-7,7])
                 plt.plot(time_vec[:-1],etddf_state_error[id_][:,3])
                 plt.fill_between(time_vec[:-1],-2*np.sqrt(etddf_cov_history[id_][:,3,3]),2*np.sqrt(etddf_cov_history[id_][:,3,3]),alpha=0.1,color='C0')
                 plt.plot(nav_time_vec,nav_state_error[id_][:,4],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,4,4]),2*np.sqrt(nav_cov_history[id_][:,4,4]),alpha=0.1,color='C3')
                 # plt.legend(['etddf',r'etddf $\pm 2 \sigma$','nav',r'nav $\pm 2 \sigma$'])
-                plt.ylabel(r'Est error E [$m/s$]')
+                plt.ylabel(r'$\xi$ [$m/s$]',size=LABEL_SIZE)
 
                 plt.subplot(313)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
+                plt.ylim([-7,7])
                 plt.plot(time_vec[:-1],etddf_state_error[id_][:,5])
                 plt.fill_between(time_vec[:-1],-2*np.sqrt(etddf_cov_history[id_][:,5,5]),2*np.sqrt(etddf_cov_history[id_][:,5,5]),alpha=0.1,color='C0')
                 plt.plot(nav_time_vec,nav_state_error[id_][:,5],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,5,5]),2*np.sqrt(nav_cov_history[id_][:,5,5]),alpha=0.1,color='C3')
                 # plt.legend(['etddf',r'etddf $\pm 2 \sigma$','nav',r'nav $\pm 2 \sigma$'])
-                plt.xlabel('Time [s]')
-                plt.ylabel(r'Est error D[$m$]')
+                plt.xlabel('Time [s]',size=LABEL_SIZE)
+                plt.ylabel(r'$d$ [$m/s$]',size=LABEL_SIZE)
 
                 # Attitude error
                 plt.figure()
                 plt.subplot(411)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
                 plt.plot(nav_time_vec,nav_state_error[id_][:,6],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,6,6]),2*np.sqrt(nav_cov_history[id_][:,6,6]),alpha=0.1,color='C3')
-                plt.ylabel('q0 est error')
-                plt.title('Agent ' + str(id_) + ', ' + str(fig) + ', Abs. pos. -- ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Attitude error')
+                plt.ylabel(r'$q_0$',size=LABEL_SIZE)
+                plt.title('Agent ' + str(id_) + ', ' + params_str + ', GPS agents: ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Attitude error',size=TITLE_SIZE)
                 plt.legend(['est error',r'$2\pm\sigma$'])
 
                 plt.subplot(412)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
                 plt.plot(nav_time_vec,nav_state_error[id_][:,7],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,7,7]),2*np.sqrt(nav_cov_history[id_][:,7,7]),alpha=0.1,color='C3')
-                plt.ylabel('q1 est error')
+                plt.ylabel(r'$q_1$',size=LABEL_SIZE)
 
                 plt.subplot(413)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
                 plt.plot(nav_time_vec,nav_state_error[id_][:,8],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,8,8]),2*np.sqrt(nav_cov_history[id_][:,8,8]),alpha=0.1,color='C3')
-                plt.ylabel('q2 est error')
+                plt.ylabel(r'$q_2$',size=LABEL_SIZE)
 
                 plt.subplot(414)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
                 plt.plot(nav_time_vec,nav_state_error[id_][:,9],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,9,9]),2*np.sqrt(nav_cov_history[id_][:,9,9]),alpha=0.1,color='C3')
-                plt.ylabel('q3 est error')
+                plt.ylabel(r'$q_3$',size=LABEL_SIZE)
+                plt.xlabel('Time [s]',size=LABEL_SIZE)
 
                 # Euler angle attitude error
                 euler_angles = np.zeros((nav_state_error[id_].shape[0],3))
@@ -466,77 +513,95 @@ def time_trace_plots(path, agent_ids):
 
                 plt.figure()
                 plt.subplot(311)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
                 plt.plot(nav_time_vec,euler_angles[:,0]*180/np.pi,'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(euler_cov[:,0,0])*180/np.pi,2*np.sqrt(euler_cov[:,0,0])*180/np.pi,alpha=0.1,color='C3')
                 plt.legend(['est error',r'$\pm 2 \sigma$'])
-                plt.ylabel(r'Est error $\phi$ [$m/s/s$]')
-                plt.title('Agent ' + str(id_) + ', ' + str(fig) + ', Abs. pos. -- ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Euler attitude error')
+                plt.ylabel(r'$\phi$ [$deg$]',size=LABEL_SIZE)
+                plt.title('Agent ' + str(id_) + ', ' + params_str + ', GPS agents: ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Euler attitude error',size=TITLE_SIZE)
 
                 plt.subplot(312)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
                 plt.plot(nav_time_vec,euler_angles[:,1]*180/np.pi,'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(euler_cov[:,1,1])*180/np.pi,2*np.sqrt(euler_cov[:,1,1])*180/np.pi,alpha=0.1,color='C3')
                 # plt.legend(['est error',r'$\pm 2 \sigma$'])
-                plt.ylabel(r'Est error $\theta$ [$m/s/s$]')
+                plt.ylabel(r'$\theta$ [$deg$]',size=LABEL_SIZE)
 
                 plt.subplot(313)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
                 plt.plot(nav_time_vec,euler_angles[:,2]*180/np.pi,'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(euler_cov[:,2,2])*180/np.pi,2*np.sqrt(euler_cov[:,2,2])*180/np.pi,alpha=0.1,color='C3')
                 # plt.legend(['est error',r'$\pm 2 \sigma$'])
-                plt.xlabel('Time [s]')
-                plt.ylabel(r'Est error $\psi$ [$m/s/s$]')
+                plt.xlabel('Time [s]',size=LABEL_SIZE)
+                plt.ylabel(r'$\psi$ [$deg$]',size=LABEL_SIZE)
 
                 # Accelerometer Bias error
                 plt.figure()
                 plt.subplot(311)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
                 plt.plot(nav_time_vec,nav_state_error[id_][:,10],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,10,10]),2*np.sqrt(nav_cov_history[id_][:,10,10]),alpha=0.1,color='C3')
                 plt.legend(['est error',r'$\pm 2 \sigma$'])
-                plt.ylabel(r'Est error X [$m/s/s$]')
-                plt.title('Agent ' + str(id_) + ', ' + str(fig) + ', Abs. pos. -- ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Accel bias error')
+                plt.ylabel(r'X [$m/s/s$]',size=LABEL_SIZE)
+                plt.title('Agent ' + str(id_) + ', ' + params_str + ', GPS agents: ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Accel bias error',size=TITLE_SIZE)
 
                 plt.subplot(312)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
                 plt.plot(nav_time_vec,nav_state_error[id_][:,11],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,11,11]),2*np.sqrt(nav_cov_history[id_][:,11,11]),alpha=0.1,color='C3')
                 plt.legend(['est error',r'$\pm 2 \sigma$'])
-                plt.ylabel(r'Est error Y [$m/s/s$]')
+                plt.ylabel(r'Y [$m/s/s$]',size=LABEL_SIZE)
 
                 plt.subplot(313)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
                 plt.plot(nav_time_vec,nav_state_error[id_][:,12],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,12,12]),2*np.sqrt(nav_cov_history[id_][:,12,12]),alpha=0.1,color='C3')
                 plt.legend(['est error',r'$\pm 2 \sigma$'])
-                plt.xlabel('Time [s]')
-                plt.ylabel(r'Est error Z [$m/s/s$]')
+                plt.xlabel('Time [s]',size=LABEL_SIZE)
+                plt.ylabel(r'Z [$m/s/s$]',size=LABEL_SIZE)
 
                 # Gyro bias error
                 plt.figure()
                 plt.subplot(311)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
                 plt.plot(nav_time_vec,nav_state_error[id_][:,13],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,13,13]),2*np.sqrt(nav_cov_history[id_][:,13,13]),alpha=0.1,color='C3')
                 plt.legend(['est error',r'$\pm 2 \sigma$'])
-                plt.ylabel(r'Est error X [$rad/s$]')
-                plt.title('Agent ' + str(id_) + ', ' + str(fig) + ', Abs. pos. -- ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Gyro bias error')
+                plt.ylabel(r'X [$rad/s$]',size=LABEL_SIZE)
+                plt.title('Agent ' + str(id_) + ', ' + params_str + ', GPS agents: ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Gyro bias error',size=TITLE_SIZE)
 
                 plt.subplot(312)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
                 plt.plot(nav_time_vec,nav_state_error[id_][:,14],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,14,14]),2*np.sqrt(nav_cov_history[id_][:,14,14]),alpha=0.1,color='C3')
                 plt.legend(['est error',r'$\pm 2 \sigma$'])
-                plt.ylabel(r'Est error Y [$rad/s$]')
+                plt.ylabel(r'Y [$rad/s$]',size=LABEL_SIZE)
 
                 plt.subplot(313)
+                for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
+                    label.set_fontsize(TICK_SIZE)
                 plt.grid(True)
                 plt.plot(nav_time_vec,nav_state_error[id_][:,15],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,15,15]),2*np.sqrt(nav_cov_history[id_][:,15,15]),alpha=0.1,color='C3')
                 plt.legend(['est error',r'$\pm 2 \sigma$'])
-                plt.xlabel('Time [s]')
-                plt.ylabel(r'Est error Z [$rad/s$]')
+                plt.xlabel('Time [s]',size=LABEL_SIZE)
+                plt.ylabel(r'Est error Z [$rad/s$]',size=LABEL_SIZE)
 
 
 
@@ -586,6 +651,7 @@ def trajectory_plots(path,agent_ids):
     # figs = [['delta05','drop00','tau30'],['delta10','drop00','tau30'],['delta15','drop00','tau30'],['delta20','drop00','tau30']]
     # figs = [['delta15','drop00','tau30']]
     # figs = [['delta15','drop00','tau70']]
+    # figs = [['delta10','drop00','tau35'],['delta25','drop00','tau7']]
     figs = [['delta10','drop00','tau50'],['delta20','drop00','tau50']]
 
     # load simulation metadata and get ids of agents to plot
@@ -671,6 +737,7 @@ def trajectory_plots(path,agent_ids):
             # ax.plot(gt_data[:,0],gt_data[:,1],gt_data[:,2])
             # plt.plot(est[:,0],est[:,1])
             ax.plot(true_pos[0,:-8],true_pos[1,:-8],true_pos[2,:-8])
+            ax.scatter(true_pos[0,-9],true_pos[1,-9],true_pos[2,-9],marker='>',label='_nolegend_')
             # ax.plot(generated_measurements['GPS'][:,0],generated_measurements['GPS'][:,1],generated_measurements['GPS'][:,2],'x')
             # plt.title('Ground Truth 3D Position')
             # plt.xlabel('X Position [m]')
@@ -681,9 +748,9 @@ def trajectory_plots(path,agent_ids):
             # ax.set_ylim([-100,100])
             # ax.set_zlim([-100,100])
 
-            legend_str.append('{} true'.format(id_))
+            legend_str.append('{}'.format(id_))
 
-        plt.legend(legend_str,loc='upper left')
+        plt.legend(legend_str,loc='center left')
 
 
 def quat2euler(quat,deg=False):
