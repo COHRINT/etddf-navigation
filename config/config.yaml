@@ -7,8 +7,8 @@ nav_dt: 0.01
 monte_carlo_sims: True
 num_mc_sims: 2
 
-delta_values: [1.0,2.0]
-tau_values: [5.0]
+delta_values: [1.0]
+tau_values: [7.0]
 msg_drop_prob_values: [0.0]
 
 use_adaptive_tau: True
@@ -17,8 +17,8 @@ use_adaptive_tau: True
 fixed_rng: False
 
 # data compression techniques
-quantization: False
-diagonalization: False
+quantization: True
+diagonalization: True
 
 agent_cfg:
     conn_struct_type: "tree"

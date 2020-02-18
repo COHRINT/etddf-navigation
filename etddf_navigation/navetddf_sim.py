@@ -470,13 +470,13 @@ class NavSimInstance:
 
         for i in range(0,self.num_agents):
             # generate vehicle control
-            x_accel = lambda t: 1.0*np.sin(t*np.pi/self.max_time) #+ np.random.normal(0,0.01)
+            x_accel = lambda t: 0.5*np.sin(t*np.pi/self.max_time) #+ np.random.normal(0,0.01)
             y_accel = lambda t: 0.0*np.sin(t*3*np.pi/self.max_time) #+ np.random.normal(0,0.01)
             z_accel = lambda t: 0.0*np.sin(t*3*np.pi/self.max_time) #+ np.random.normal(0,0.01)
             # generate yaw rates
             roll_rate = lambda t: 0.0*np.sin(t*2*np.pi/self.max_time) #+ np.random.normal(0,0.01)
             pitch_rate = lambda t: 0.0*np.sin(t*2*np.pi/self.max_time) #+ np.random.normal(0,0.01)
-            yaw_rate = lambda t: 0.4#*np.sin(t*4*np.pi/self.max_time) #+ np.random.normal(0,0.01)
+            yaw_rate = lambda t: 0.0#*np.sin(t*4*np.pi/self.max_time) #+ np.random.normal(0,0.01)
 
             control_fxns = [x_accel,y_accel,z_accel,roll_rate,pitch_rate,yaw_rate]
 
@@ -682,7 +682,7 @@ class NavSimInstance:
                 
             #     # check covariance trace for triggering CI
                 agent.ci_trigger_rate = agent.ci_trigger_cnt / ((self.sim_time_step*(self.nav_dt/self.etddf_dt))-1)
-                if np.trace(agent.local_filter.P) > agent.tau and agent.ci_trigger_rate < 0.2:
+                if (np.trace(agent.local_filter.P) > agent.tau and agent.ci_trigger_rate < 1.0) or agent.ci_trigger_rate < 0.9:
                 # if self.sim_time_step*(self.nav_dt/self.etddf_dt) % 5 == 0:
                     agent.ci_trigger_cnt += 1
                     # agent.ci_trigger_rate = agent.ci_trigger_cnt / ((self.sim_time_step*(self.nav_dt/self.etddf_dt))-1)

@@ -48,10 +48,12 @@ def mse_plots(path,agent_ids):
     #         ['delta05','drop00','tau25'],['delta10','drop00','tau25'],['delta15','drop00','tau25'],['delta20','drop00','tau25'],
     # figs = [['delta05','drop00','tau30'],['delta10','drop00','tau30'],['delta15','drop00','tau30'],['delta20','drop00','tau30']]
     # figs = [['delta15','drop00','tau30']]
-    figs = [['delta10','drop00','tau35'],['delta10','drop00','tau50'],['delta10','drop00','tau70'],
-            ['delta15','drop00','tau35'],['delta15','drop00','tau50'],['delta15','drop00','tau70'],
-            ['delta20','drop00','tau35'],['delta20','drop00','tau50'],['delta20','drop00','tau70'],
-            ['delta25','drop00','tau35'],['delta25','drop00','tau50'],['delta25','drop00','tau70']]
+    # figs = [['delta10','drop00','tau35'],['delta10','drop00','tau50'],['delta10','drop00','tau70'],
+    #         ['delta15','drop00','tau35'],['delta15','drop00','tau50'],['delta15','drop00','tau70'],
+    #         ['delta20','drop00','tau35'],['delta20','drop00','tau50'],['delta20','drop00','tau70'],
+    #         ['delta25','drop00','tau35'],['delta25','drop00','tau50'],['delta25','drop00','tau70']]
+    figs = [['delta10','drop00','tau7'],['delta15','drop00','tau7']]
+    # figs = [['delta25','drop00','tau7']]
 
     # load simulation metadata and get ids of agents to plot
     metadata = load_metadata(path)['cfg']
@@ -311,7 +313,9 @@ def time_trace_plots(path, agent_ids):
     #         ['delta20','drop00','tau35'],['delta20','drop00','tau50'],['delta20','drop00','tau70'],
     #         ['delta25','drop00','tau35'],['delta25','drop00','tau50'],['delta25','drop00','tau70']]
     # figs = [['delta10','drop00','tau35'],['delta25','drop00','tau70']]
-    figs = [['delta10','drop00','tau50'],['delta20','drop00','tau50']]
+    # figs = [['delta10','drop00','tau50'],['delta20','drop00','tau50']]
+    # figs = [['delta25','drop00','tau70']]
+    figs = [['delta10','drop00','tau7'],['delta15','drop00','tau7']]
 
      # load simulation metadata and get ids of agents to plot
     metadata = load_metadata(path)['cfg']
@@ -395,7 +399,7 @@ def time_trace_plots(path, agent_ids):
                 plt.fill_between(time_vec[:-1],-2*np.sqrt(etddf_cov_history[id_][:,0,0]),2*np.sqrt(etddf_cov_history[id_][:,0,0]),alpha=0.1,color='C0')
                 plt.plot(nav_time_vec,nav_state_error[id_][:,0],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,0,0]),2*np.sqrt(nav_cov_history[id_][:,0,0]),alpha=0.1,color='C3')
-                plt.legend(['etddf',r'etddf $\pm 2 \sigma$','nav',r'nav $\pm 2 \sigma$'])
+                plt.legend(loc='lower right',ncol=4,labels=['etddf','nav',r'etddf $\pm 2 \sigma$',r'nav $\pm 2 \sigma$'])
                 plt.ylabel(r'$\eta$ [$m$]',size=LABEL_SIZE)
                 plt.title('Agent ' + str(id_) + ', ' + params_str + ', GPS agents: ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Position error',size=TITLE_SIZE)
 
@@ -435,8 +439,9 @@ def time_trace_plots(path, agent_ids):
                 plt.fill_between(time_vec[:-1],-2*np.sqrt(etddf_cov_history[id_][:,1,1]),2*np.sqrt(etddf_cov_history[id_][:,1,1]),alpha=0.1,color='C0')
                 plt.plot(nav_time_vec,nav_state_error[id_][:,3],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,3,3]),2*np.sqrt(nav_cov_history[id_][:,3,3]),alpha=0.1,color='C3')
-                plt.legend(['etddf',r'etddf $\pm 2 \sigma$','nav',r'nav $\pm 2 \sigma$'])
-                plt.ylabel(r'$\eta$ [$m/s$]',size=LABEL_SIZE)
+                # plt.legend(['etddf',r'etddf $\pm 2 \sigma$','nav',r'nav $\pm 2 \sigma$'])
+                plt.legend(loc='lower right',ncol=4,labels=['etddf','nav',r'etddf $\pm 2 \sigma$',r'nav $\pm 2 \sigma$'])
+                plt.ylabel(r'$\dot{\eta}$ [$m/s$]',size=LABEL_SIZE)
                 plt.title('Agent ' + str(id_) + ', ' + params_str + ', GPS agents: ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Velocity error',size=TITLE_SIZE)
 
                 plt.subplot(312)
@@ -449,7 +454,7 @@ def time_trace_plots(path, agent_ids):
                 plt.plot(nav_time_vec,nav_state_error[id_][:,4],'C3--')
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,4,4]),2*np.sqrt(nav_cov_history[id_][:,4,4]),alpha=0.1,color='C3')
                 # plt.legend(['etddf',r'etddf $\pm 2 \sigma$','nav',r'nav $\pm 2 \sigma$'])
-                plt.ylabel(r'$\xi$ [$m/s$]',size=LABEL_SIZE)
+                plt.ylabel(r'$\dot{\xi}$ [$m/s$]',size=LABEL_SIZE)
 
                 plt.subplot(313)
                 for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
@@ -462,7 +467,7 @@ def time_trace_plots(path, agent_ids):
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,5,5]),2*np.sqrt(nav_cov_history[id_][:,5,5]),alpha=0.1,color='C3')
                 # plt.legend(['etddf',r'etddf $\pm 2 \sigma$','nav',r'nav $\pm 2 \sigma$'])
                 plt.xlabel('Time [s]',size=LABEL_SIZE)
-                plt.ylabel(r'$d$ [$m/s$]',size=LABEL_SIZE)
+                plt.ylabel(r'$\dot{d}$ [$m/s$]',size=LABEL_SIZE)
 
                 # Attitude error
                 plt.figure()
@@ -474,7 +479,7 @@ def time_trace_plots(path, agent_ids):
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,6,6]),2*np.sqrt(nav_cov_history[id_][:,6,6]),alpha=0.1,color='C3')
                 plt.ylabel(r'$q_0$',size=LABEL_SIZE)
                 plt.title('Agent ' + str(id_) + ', ' + params_str + ', GPS agents: ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']) + ', Attitude error',size=TITLE_SIZE)
-                plt.legend(['est error',r'$2\pm\sigma$'])
+                plt.legend(['est error',r'$\pm 2\sigma$'],ncol=2,loc='lower right')
 
                 plt.subplot(412)
                 for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
@@ -601,7 +606,7 @@ def time_trace_plots(path, agent_ids):
                 plt.fill_between(nav_time_vec,-2*np.sqrt(nav_cov_history[id_][:,15,15]),2*np.sqrt(nav_cov_history[id_][:,15,15]),alpha=0.1,color='C3')
                 plt.legend(['est error',r'$\pm 2 \sigma$'])
                 plt.xlabel('Time [s]',size=LABEL_SIZE)
-                plt.ylabel(r'Est error Z [$rad/s$]',size=LABEL_SIZE)
+                plt.ylabel(r'Z [$rad/s$]',size=LABEL_SIZE)
 
 
 
@@ -622,7 +627,7 @@ def time_trace_plots(path, agent_ids):
 
     # plt.show()
 
-def trajectory_plots(path,agent_ids):
+def trajectory_plots(path,agent_ids,params):
     """
     Creates plot of vehicle trajectories.
 
@@ -651,8 +656,10 @@ def trajectory_plots(path,agent_ids):
     # figs = [['delta05','drop00','tau30'],['delta10','drop00','tau30'],['delta15','drop00','tau30'],['delta20','drop00','tau30']]
     # figs = [['delta15','drop00','tau30']]
     # figs = [['delta15','drop00','tau70']]
-    # figs = [['delta10','drop00','tau35'],['delta25','drop00','tau7']]
-    figs = [['delta10','drop00','tau50'],['delta20','drop00','tau50']]
+    # figs = [['delta10','drop00','tau7'],['delta25','drop00','tau7']]
+    # figs = [['delta10','drop00','tau50'],['delta20','drop00','tau50']]
+    # figs = [['delta25','drop00','tau7']]
+    figs = [['delta10','drop00','tau7'],['delta15','drop00','tau7']]
 
     # load simulation metadata and get ids of agents to plot
     metadata = load_metadata(path)['cfg']
@@ -674,7 +681,7 @@ def trajectory_plots(path,agent_ids):
         for file in all_files:
             keep_flag = True
             for param in fig:
-                if param not in file:
+                if param not in file and params != -1:
                     keep_flag = False
             if keep_flag: files_to_load.append(file)
         
@@ -709,9 +716,9 @@ def trajectory_plots(path,agent_ids):
         plt.title('Sample trajectories, ' + params_str + ', GPS agents: ' + str(metadata['agent_cfg']['sensors']['lin_abs_pos']['agents']),size=TITLE_SIZE)
         # plt.xlabel('Time [s]',size=LABEL_SIZE)
         # plt.ylabel(r'Est error [$m$]',size=LABEL_SIZE)
-        plt.xlabel(r'N [$m$]',size=LABEL_SIZE)
-        plt.ylabel(r'E [$m$]',size=LABEL_SIZE)
-        ax.set_zlabel(r'D [$m$]',size=LABEL_SIZE)
+        plt.xlabel(r'$\eta$ [$m$]',size=LABEL_SIZE)
+        plt.ylabel(r'$\xi$ [$m$]',size=LABEL_SIZE)
+        ax.set_zlabel(r'$d$ [$m$]',size=LABEL_SIZE)
 
         for label in (plt.gca().get_xticklabels() + plt.gca().get_yticklabels()):
             label.set_fontsize(TICK_SIZE)
@@ -728,7 +735,7 @@ def trajectory_plots(path,agent_ids):
 
         # for sample trajectory, we just need one plot, and one trajectory from one monte carlo sim
         for id_ in agent_ids:
-            true_pos = data[0]['results']['nav_true_states'][0][id_]
+            true_pos = data[0]['results']['nav_true_states'][1][id_]
             print(true_pos.shape)
             
             
@@ -865,6 +872,8 @@ if __name__ == "__main__":
                     help='plot relative mean-squared-errors (relMSE)')
     parser.add_argument('-j','--traj',dest='traj_flag',action='store_true',
                     help='plot vehicle trajectory')
+    parser.add_argument('-p','--plot-params',dest='params',action='store',nargs='*',type=float,
+                    help='specifiy which simulations parameters you want to plot. Use -1 for all.')
     args = parser.parse_args()
 
     # TODO: add arg for local, common, or both
@@ -896,7 +905,7 @@ if __name__ == "__main__":
         rel_mse_plots(args.dir_path, agents)
 
     if args.traj_flag:
-        trajectory_plots(args.dir_path, agents)
+        trajectory_plots(args.dir_path, agents, args.params)
 
     plt.show()
     # if args.data_usage:
